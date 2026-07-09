@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0b12" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🎵</text></svg>" />
+  <title>Soundfall — прототип</title>
+  <script type="module" crossorigin src="/soundbook/assets/index-SOernbq1.js"></script>
+  <link rel="stylesheet" crossorigin href="/soundbook/assets/index-B4ODeRvn.css">
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <div id="audio-hint">коснись экрана, чтобы включить звук</div>
+
+  <div id="ui">
+    <div class="row">
+      <button id="playBtn" class="icon" title="Пауза / старт">⏸</button>
+      <input type="range" id="tempo" min="30" max="480" step="1" value="120" />
+      <span id="bpmLabel" class="mono">120</span>
+    </div>
+    <div class="row">
+      <div class="group" id="tools">
+        <button data-tool="draw" class="active" title="Рисовать преграды">✏️</button>
+        <button data-tool="move" title="Двигать">✋</button>
+        <button data-tool="erase" title="Удалять">🗑️</button>
+      </div>
+      <div class="group" id="types">
+        <button data-type="normal" class="active t-normal" title="Обычная — чистая нота">нота</button>
+        <button data-type="delay" class="t-delay" title="Голубая — delay">delay</button>
+        <button data-type="crush" class="t-crush" title="Красная — bitcrush">crush</button>
+      </div>
+      <button id="clearBtn" title="Убрать все преграды">✨</button>
+    </div>
+  </div>
+
+</body>
+</html>
