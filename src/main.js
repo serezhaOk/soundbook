@@ -16,7 +16,11 @@ function resize() {
   canvas.height = H * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-window.addEventListener('resize', resize);
+window.addEventListener('resize', () => {
+  resize();
+  emitter.x = Math.min(Math.max(emitter.x, BALL_R), W - BALL_R);
+  emitter.y = Math.min(emitter.y, H * 0.5);
+});
 resize();
 
 // ---------- audio ----------
@@ -49,11 +53,25 @@ const synths = {
 };
 
 let audioReady = false;
+
+// iOS глушит WebAudio при беззвучном переключателе; проигрывание
+// «настоящего» <audio> переводит аудиосессию в режим playback
+function unlockIOSAudio() {
+  const el = document.createElement('audio');
+  el.setAttribute('playsinline', '');
+  el.preload = 'auto';
+  el.loop = true;
+  el.src =
+    'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+  el.play().catch(() => {});
+}
+
 async function ensureAudio() {
   if (audioReady) return;
-  audioReady = true;
+  unlockIOSAudio();
   await Tone.start();
-  document.getElementById('audio-hint')?.remove();
+  await Tone.getContext().resume();
+  audioReady = true;
 }
 
 // Пентатоника — любые столкновения звучат консонансно
@@ -155,6 +173,16 @@ Events.on(engine, 'collisionStart', (e) => {
     bar.plugin.flash = 1;
     ball.plugin.flash = 1;
   }
+});
+
+// ---------- стартовый экран ----------
+const startScreen = document.getElementById('start-screen');
+let started = false;
+document.getElementById('startBtn').addEventListener('click', async () => {
+  await ensureAudio();
+  started = true;
+  startScreen.classList.add('hidden');
+  setTimeout(() => startScreen.remove(), 450);
 });
 
 // ---------- state / UI ----------
@@ -317,7 +345,7 @@ function frame(now) {
   const dt = Math.min(now - last, 50);
   last = now;
 
-  if (running) {
+  if (started && running) {
     spawnAcc += dt;
     const interval = 60000 / bpm;
     while (spawnAcc >= interval) {
