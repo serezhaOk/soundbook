@@ -14,14 +14,20 @@ function resize() {
   H = window.innerHeight;
   canvas.width = W * dpr;
   canvas.height = H * dpr;
+  // явный CSS-размер, чтобы координаты указателя точно совпадали с рисованием
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-window.addEventListener('resize', () => {
-  resize();
-  emitter.x = Math.min(Math.max(emitter.x, BALL_R), W - BALL_R);
-  emitter.y = Math.min(emitter.y, H * 0.5);
-});
 resize();
+window.addEventListener('resize', () => { resize(); placeEmitter(); });
+window.addEventListener('orientationchange', () => { resize(); placeEmitter(); });
+
+// высота «чёлки» / статус-бара, чтобы эмиттер не прятался под неё
+function safeTop() {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--sat');
+  return parseFloat(v) || 0;
+}
 
 // ---------- audio ----------
 // Три шины: сухая нота, delay (голубые преграды), bitcrush (красные)
@@ -54,16 +60,41 @@ const synths = {
 
 let audioReady = false;
 
-// iOS глушит WebAudio при беззвучном переключателе; проигрывание
-// «настоящего» <audio> переводит аудиосессию в режим playback
+// Валидный тихий WAV (генерим в рантайме — data-URI из прошлой версии был битый).
+// Зацикленный <audio> переводит аудиосессию iOS в режим playback,
+// поэтому WebAudio звучит даже при включённом беззвучном переключателе.
+function makeSilentWavUrl(seconds = 1) {
+  const sampleRate = 8000;
+  const numSamples = Math.floor(sampleRate * seconds);
+  const dataSize = numSamples * 2;
+  const buf = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buf);
+  const str = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+  str(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  str(8, 'WAVE');
+  str(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);            // PCM
+  view.setUint16(22, 1, true);            // моно
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  str(36, 'data');
+  view.setUint32(40, dataSize, true);     // сэмплы = нули = тишина
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+
+let silentEl = null;
 function unlockIOSAudio() {
-  const el = document.createElement('audio');
-  el.setAttribute('playsinline', '');
-  el.preload = 'auto';
-  el.loop = true;
-  el.src =
-    'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
-  el.play().catch(() => {});
+  if (!silentEl) {
+    silentEl = document.createElement('audio');
+    silentEl.src = makeSilentWavUrl(1);
+    silentEl.loop = true;
+    silentEl.setAttribute('playsinline', '');
+  }
+  silentEl.play().catch(() => {});
 }
 
 async function ensureAudio() {
@@ -99,7 +130,13 @@ const barriers = [];
 const lastHit = new Map(); // "ballId:barId" -> timestamp, анти-дребезг
 
 let noteIndex = 0;
+// эмиттер жёстко прибит по центру ширины у самого верха, не перетаскивается
 const emitter = { x: W * 0.5, y: 24 };
+function placeEmitter() {
+  emitter.x = W / 2;
+  emitter.y = Math.round(safeTop() + 18);
+}
+placeEmitter();
 
 function spawnBall() {
   const note = SCALE[noteIndex % SCALE.length];
@@ -180,10 +217,19 @@ const startScreen = document.getElementById('start-screen');
 let started = false;
 document.getElementById('startBtn').addEventListener('click', async () => {
   await ensureAudio();
+  placeEmitter();
+  if (!barriers.length) seedDemo();
   started = true;
   startScreen.classList.add('hidden');
   setTimeout(() => startScreen.remove(), 450);
 });
+
+// демо-преграды создаём на старте — к этому моменту размеры вьюпорта стабильны
+function seedDemo() {
+  createBarrier(W * 0.22, H * 0.32, W * 0.55, H * 0.42, 'normal');
+  createBarrier(W * 0.78, H * 0.52, W * 0.45, H * 0.62, 'delay');
+  createBarrier(W * 0.18, H * 0.72, W * 0.5, H * 0.8, 'crush');
+}
 
 // ---------- state / UI ----------
 let running = true;
@@ -229,11 +275,41 @@ bindGroup('types', 'type', (v) => {
 
 // ---------- pointer: рисование / перемещение / удаление ----------
 let drawing = null; // {x1,y1,x2,y2}
-let dragging = null; // {kind:'emitter'} | {kind:'body', body, dx, dy}
+let dragging = null; // {body, dx, dy}
+const HIT_TOL = 24;  // допуск попадания по преграде (палец толще линии)
 
 function pos(e) {
   const r = canvas.getBoundingClientRect();
   return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const l2 = dx * dx + dy * dy;
+  if (l2 === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / l2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+function barrierEndpoints(b) {
+  const half = b.plugin.len / 2;
+  const c = Math.cos(b.angle), s = Math.sin(b.angle);
+  return [
+    b.position.x - half * c, b.position.y - half * s,
+    b.position.x + half * c, b.position.y + half * s,
+  ];
+}
+
+// ближайшая преграда в пределах допуска (перебор с конца — верхняя первой)
+function barrierAt(p, tol = HIT_TOL) {
+  let best = null, bestD = tol;
+  for (let i = barriers.length - 1; i >= 0; i--) {
+    const [x1, y1, x2, y2] = barrierEndpoints(barriers[i]);
+    const d = distToSegment(p.x, p.y, x1, y1, x2, y2);
+    if (d <= bestD) { bestD = d; best = barriers[i]; }
+  }
+  return best;
 }
 
 canvas.addEventListener('pointerdown', (e) => {
@@ -244,17 +320,11 @@ canvas.addEventListener('pointerdown', (e) => {
   if (tool === 'draw') {
     drawing = { x1: p.x, y1: p.y, x2: p.x, y2: p.y };
   } else if (tool === 'move') {
-    if (Math.hypot(p.x - emitter.x, p.y - emitter.y) < 34) {
-      dragging = { kind: 'emitter' };
-    } else {
-      const found = Query.point(barriers, p);
-      if (found.length) {
-        const body = found[0];
-        dragging = { kind: 'body', body, dx: body.position.x - p.x, dy: body.position.y - p.y };
-      }
-    }
+    const body = barrierAt(p);
+    if (body) dragging = { body, dx: body.position.x - p.x, dy: body.position.y - p.y };
   } else if (tool === 'erase') {
-    Query.point(barriers, p).forEach(removeBarrier);
+    const body = barrierAt(p);
+    if (body) removeBarrier(body);
   }
 });
 
@@ -263,13 +333,11 @@ canvas.addEventListener('pointermove', (e) => {
   if (drawing) {
     drawing.x2 = p.x;
     drawing.y2 = p.y;
-  } else if (dragging?.kind === 'emitter') {
-    emitter.x = Math.max(BALL_R, Math.min(W - BALL_R, p.x));
-    emitter.y = Math.max(14, Math.min(H * 0.5, p.y));
-  } else if (dragging?.kind === 'body') {
+  } else if (dragging) {
     Body.setPosition(dragging.body, { x: p.x + dragging.dx, y: p.y + dragging.dy });
   } else if (tool === 'erase' && e.buttons) {
-    Query.point(barriers, p).forEach(removeBarrier);
+    const body = barrierAt(p);
+    if (body) removeBarrier(body);
   }
 });
 
@@ -387,8 +455,3 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-
-// стартовая сцена: пара преград, чтобы сразу было слышно идею
-createBarrier(W * 0.28, H * 0.3, W * 0.55, H * 0.42, 'normal');
-createBarrier(W * 0.68, H * 0.55, W * 0.42, H * 0.66, 'delay');
-createBarrier(W * 0.2, H * 0.78, W * 0.45, H * 0.86, 'crush');
