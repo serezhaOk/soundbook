@@ -205,7 +205,7 @@ function ring(x, y, color, size = 8, vsize = 2.4) {
 }
 
 let shakeMag = 0;
-function shake(m) { shakeMag = Math.min(12, shakeMag + m); }
+function shake(m) { shakeMag = Math.min(5, shakeMag + m * 0.45); }
 
 function updateParticles(dt) {
   const k = dt / 16.7;
@@ -521,12 +521,12 @@ function updateBallEffects(b, dt, now) {
     jellyFilter.frequency.value = 750 + 250 * Math.sin(now * 0.0005);
   } else if (zone === ARP && b.plugin.arp) {
     const a = b.plugin.arp;
-    a.pulse = Math.max(0, a.pulse - dt * 0.006);
+    a.pulse = Math.max(0, a.pulse - dt * 0.005);
     if (now >= a.next) {
       play(synths.arp, b.plugin.noteIdx + a.step, 0.4, 0.08);
       a.step++;
       a.pulse = 1; // вспышка размера + смена формы в ритм
-      a.next = now + 110;
+      a.next = now + 175;
     }
   }
 }
@@ -722,7 +722,7 @@ function drawTrails() {
     for (let i = 0; i < tr.length; i++) {
       const p = tr[i];
       const f = (i + 1) / tr.length;
-      ctx.globalAlpha = f * 0.22;
+      ctx.globalAlpha = f * 0.16;
       ctx.fillStyle = `hsl(${b.plugin.hue} 70% 55%)`;
       ctx.beginPath();
       ctx.arc(p.x, p.y, BALL_R * f * 0.8, 0, Math.PI * 2);
@@ -752,13 +752,13 @@ function drawBall(b, now) {
   // в зелёном поле: пульс размера + морф круг -> квадрат -> треугольник
   const a = b.plugin.zone === ARP ? b.plugin.arp : null;
   const shape = a ? a.step % 3 : 0;
-  const flashing = a && a.pulse > 0.55; // кислотный белый строб на пике
-  if (a) r *= 1 + a.pulse * 0.45;
+  const flashing = a && a.pulse > 0.4; // на смене формы вспыхивает белым
+  if (a) r *= 1 + a.pulse * 0.5; // пульс размера на каждой смене формы
 
   if (!a) {
-    // сквош-стретч по направлению скорости — аркадное ощущение веса
+    // сквош-стретч по направлению скорости — аркадное ощущение веса (мягко)
     const sp = Math.hypot(b.velocity.x, b.velocity.y);
-    const stretch = (1 + Math.min(0.35, sp * 0.014)) * (1 - 0.42 * b.plugin.squash);
+    const stretch = (1 + Math.min(0.16, sp * 0.007)) * (1 - 0.2 * b.plugin.squash);
     ctx.rotate(Math.atan2(b.velocity.y, b.velocity.x));
     ctx.scale(stretch, 1 / stretch);
   } else {
@@ -780,17 +780,6 @@ function drawBall(b, now) {
   }
   ctx.fillStyle = flashing ? '#ffffff' : `hsl(${hue} 70% 55%)`;
   ctx.fill();
-  // «стикерная» обводка + блик
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = flashing ? `hsl(${hue} 90% 58%)` : `hsl(${hue} 55% 42%)`;
-  ctx.stroke();
-  if (!flashing) {
-    ctx.globalAlpha = 0.65;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(-r * 0.3, -r * 0.35, r * 0.24, 0, Math.PI * 2);
-    ctx.fill();
-  }
   ctx.restore();
 }
 
@@ -828,7 +817,7 @@ function frame(now) {
     b.plugin.squash = Math.max(0, b.plugin.squash - dt * 0.007);
     const tr = b.plugin.trail;
     tr.push({ x: b.position.x, y: b.position.y });
-    if (tr.length > 6) tr.shift();
+    if (tr.length > 3) tr.shift();
   }
 
   Engine.update(engine, dt);
