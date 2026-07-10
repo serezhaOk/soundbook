@@ -27,7 +27,8 @@ const gctx = gridCanvas.getContext('2d');
 let gridDirty = true;
 
 function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // полный DPR (на iPhone это 3): кап на 2 давал мыльную картинку
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
   W = window.innerWidth;
   H = window.innerHeight;
   canvas.width = W * dpr;
@@ -72,8 +73,10 @@ arpBus.wet.value = 0.4;
 // розовый: хрустящий сплит
 const distBus = new Tone.Filter(2400, 'lowpass').connect(master);
 const dist = new Tone.Distortion(0.7).connect(distBus);
-// фиолетовый: желейные дроны через хорус
-const jellyFx = new Tone.Chorus(0.6, 3.5, 0.4).connect(master).start();
+// фиолетовый: тёплый пад — фильтр -> хорус -> мягкий реверб
+const jellyVerb = new Tone.Reverb({ decay: 5, preDelay: 0.03, wet: 0.4 }).connect(master);
+const jellyChorus = new Tone.Chorus(0.4, 4.5, 0.3).connect(jellyVerb).start();
+const jellyFilter = new Tone.Filter(850, 'lowpass', -12).connect(jellyChorus);
 
 function makeSynth(dest, opts = {}) {
   const s = new Tone.PolySynth(Tone.Synth, {
@@ -97,17 +100,14 @@ const synths = {
   spawn: makeSynth(master, { volume: -20, oscillator: { type: 'sine' } }),
 };
 
-// пул голосов для желе: дрон живёт, пока шарик внутри
+// пул голосов для желе: пад живёт, пока шарик внутри.
+// fat-осцилляторы (расстроенный унисон) + медленная атака = мягкий хор
 const jellyVoices = Array.from({ length: 4 }, () => {
-  const v = new Tone.FMSynth({
-    harmonicity: 2.01,
-    modulationIndex: 6,
-    oscillator: { type: 'sine' },
-    envelope: { attack: 0.6, decay: 0.3, sustain: 0.55, release: 1.4 },
-    modulation: { type: 'triangle' },
-    modulationEnvelope: { attack: 1.2, decay: 0.5, sustain: 0.4, release: 1.2 },
-    volume: -14,
-  }).connect(jellyFx);
+  const v = new Tone.Synth({
+    oscillator: { type: 'fattriangle', count: 3, spread: 16 },
+    envelope: { attack: 1.1, decay: 0.6, sustain: 0.7, release: 2.4 },
+    volume: -15,
+  }).connect(jellyFilter);
   v._busy = false;
   return v;
 });
@@ -308,8 +308,8 @@ function releaseJelly(b) {
   setTimeout(() => { voice._busy = false; }, 1600);
 }
 
-// центр и радиус связной кляксы синих ячеек (BFS от точки входа)
-function blueBlob(startIdx) {
+// центр и радиус связной кляксы цвета color (BFS от точки входа)
+function blobOf(startIdx, color) {
   const seen = new Set([startIdx]);
   const queue = [startIdx];
   let sx = 0, sy = 0, n = 0;
@@ -321,7 +321,7 @@ function blueBlob(startIdx) {
       const nx = cx + dx, ny = cy + dy;
       if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
       const j = ny * COLS + nx;
-      if (!seen.has(j) && grid[j] === SPIN) { seen.add(j); queue.push(j); }
+      if (!seen.has(j) && grid[j] === color) { seen.add(j); queue.push(j); }
     }
   }
   const mx = (sx / n + 0.5) * CELL;
@@ -378,11 +378,13 @@ function updateBallEffects(b, dt, now) {
       attackJelly(b);
     }
     if (zone === ARP) {
-      b.frictionAir = 0.05;
-      b.plugin.arp = { next: now, step: 0 };
+      // сильное замедление: шарик почти зависает и пульсирует в ритм
+      b.frictionAir = 0.16;
+      Body.setVelocity(b, { x: b.velocity.x * 0.35, y: b.velocity.y * 0.35 });
+      b.plugin.arp = { next: now, step: 0, pulse: 0 };
     }
     if (zone === SPIN && now >= b.plugin.noSpinUntil) {
-      const { mx, my, radius } = blueBlob(cellIdxAt(b.position.x, b.position.y));
+      const { mx, my, radius } = blobOf(cellIdxAt(b.position.x, b.position.y), SPIN);
       b.plugin.spin = {
         mx, my, radius,
         ang: Math.atan2(b.position.y - my, b.position.x - mx),
@@ -391,18 +393,27 @@ function updateBallEffects(b, dt, now) {
       };
       play(synths.spin, b.plugin.noteIdx, 0.5, 0.2);
     }
-    if (zone === SPLIT && now >= b.plugin.splitCool && b.plugin.gen < 2 && balls.length < MAX_BALLS) {
+    if (zone === SPLIT && now >= b.plugin.splitCool) {
       b.plugin.splitCool = now + 500;
-      const v = b.velocity;
-      const rot = (vec, a) => ({
-        x: vec.x * Math.cos(a) - vec.y * Math.sin(a),
-        y: vec.x * Math.sin(a) + vec.y * Math.cos(a),
+      // отталкиваем от центра кляксы
+      const { mx, my } = blobOf(cellIdxAt(b.position.x, b.position.y), SPLIT);
+      let dx = b.position.x - mx, dy = b.position.y - my;
+      const d = Math.hypot(dx, dy) || 1;
+      dx /= d; dy /= d;
+      const speed = Math.max(7, Math.hypot(b.velocity.x, b.velocity.y) * 1.1);
+      const rot = (vx, vy, a) => ({
+        x: vx * Math.cos(a) - vy * Math.sin(a),
+        y: vx * Math.sin(a) + vy * Math.cos(a),
       });
-      Body.setVelocity(b, rot(v, -0.45));
-      const clone = spawnBall(
-        b.plugin.noteIdx + 2, b.position.x, b.position.y, rot(v, 0.45), b.plugin.gen + 1
-      );
-      if (clone) clone.plugin.splitCool = now + 500;
+      Body.setVelocity(b, rot(dx * speed, dy * speed, -0.35));
+      // дубль той же ноты разлетается веером в другую сторону
+      if (b.plugin.gen < 2 && balls.length < MAX_BALLS) {
+        const clone = spawnBall(
+          b.plugin.noteIdx, b.position.x, b.position.y,
+          rot(dx * speed, dy * speed, 0.35), b.plugin.gen + 1
+        );
+        if (clone) clone.plugin.splitCool = now + 500;
+      }
       play(synths.split, b.plugin.noteIdx, 0.7, 0.15);
     }
     b.plugin.zone = zone;
@@ -420,14 +431,17 @@ function updateBallEffects(b, dt, now) {
     });
     const voice = b.plugin.jellyVoice;
     if (voice) {
-      voice.detune.value = Math.sin(t * 0.0022 + b.id) * 45;
-      voice.modulationIndex.value = 5 + 4 * Math.sin(t * 0.0011);
+      // еле заметное дыхание вместо скрипучей вибрации
+      voice.detune.value = Math.sin(t * 0.0009 + b.id) * 9;
     }
+    jellyFilter.frequency.value = 750 + 250 * Math.sin(now * 0.0005);
   } else if (zone === ARP && b.plugin.arp) {
     const a = b.plugin.arp;
+    a.pulse = Math.max(0, a.pulse - dt * 0.006);
     if (now >= a.next) {
       play(synths.arp, b.plugin.noteIdx + a.step, 0.4, 0.08);
       a.step++;
+      a.pulse = 1; // вспышка размера + смена формы в ритм
       a.next = now + 110;
     }
   }
@@ -582,7 +596,7 @@ function redrawGrid() {
         continue;
       }
       // скругляем только внешние углы кляксы
-      const r = 6;
+      const r = 8;
       const tl = at(cx - 1, cy) !== c && at(cx, cy - 1) !== c ? r : 0;
       const tr = at(cx + 1, cy) !== c && at(cx, cy - 1) !== c ? r : 0;
       const br = at(cx + 1, cy) !== c && at(cx, cy + 1) !== c ? r : 0;
@@ -616,10 +630,28 @@ function drawEmitter(t) {
 }
 
 function drawBall(b) {
+  const { x, y } = b.position;
   ctx.save();
   ctx.fillStyle = `hsl(${b.plugin.hue} 70% 55%)`;
+
+  // в зелёном поле: пульс размера + морф круг -> квадрат -> треугольник
+  const a = b.plugin.zone === ARP ? b.plugin.arp : null;
+  const r = BALL_R * (a ? 1 + a.pulse * 0.4 : 1);
+  const shape = a ? a.step % 3 : 0;
+
   ctx.beginPath();
-  ctx.arc(b.position.x, b.position.y, BALL_R, 0, Math.PI * 2);
+  if (shape === 1) {
+    const s = r * 1.7;
+    ctx.rect(x - s / 2, y - s / 2, s, s);
+  } else if (shape === 2) {
+    const rr = r * 1.35;
+    ctx.moveTo(x, y - rr);
+    ctx.lineTo(x + rr * 0.866, y + rr * 0.5);
+    ctx.lineTo(x - rr * 0.866, y + rr * 0.5);
+    ctx.closePath();
+  } else {
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+  }
   ctx.fill();
   ctx.restore();
 }
