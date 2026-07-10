@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#f6f2ea" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🎵</text></svg>" />
   <title>Soundfall — прототип</title>
-  <script type="module" crossorigin src="/soundbook/assets/index-ItvoZYwi.js"></script>
-  <link rel="stylesheet" crossorigin href="/soundbook/assets/index-DWm-_BoR.css">
+  <script type="module" crossorigin src="/soundbook/assets/index-BEhXKxx0.js"></script>
+  <link rel="stylesheet" crossorigin href="/soundbook/assets/index-BEKGv1Q6.css">
 </head>
 <body>
   <canvas id="scene"></canvas>
@@ -24,27 +24,37 @@
     <button id="startBtn">tap to start</button>
   </div>
 
+  <!-- Слайдер количества генераций эмиттера — пока закомментирован
+  <div class="tempo-row">
+    <input type="range" id="tempo" min="30" max="480" step="1" value="120" />
+    <span id="bpmLabel" class="mono">120</span>
+  </div>
+  -->
+
   <div id="ui">
-    <div class="tempo-row">
-      <input type="range" id="tempo" min="30" max="480" step="1" value="120" />
-      <span id="bpmLabel" class="mono">120</span>
+    <button id="eraserBtn" class="eraser" title="Ластик" aria-label="Ластик">
+      <span class="er-tip"></span>
+      <span class="er-body"></span>
+      <span class="er-collar"></span>
+    </button>
+
+    <div class="pill" id="palette">
+      <button class="swatch" data-color="5" style="--c:#f58f8b" title="Сплиттер"></button>
+      <button class="swatch" data-color="1" style="--c:#c9a3ed" title="Желе"></button>
+      <button class="swatch active" data-color="3" style="--c:#83c9ed" title="Центрифуга"></button>
+      <button class="swatch" data-color="4" style="--c:#a7e29b" title="Арпеджиатор"></button>
+      <button class="swatch" data-color="2" style="--c:#f6ce5c" title="Батут"></button>
     </div>
-    <div class="main-row">
-      <button id="eraserBtn" class="eraser" title="Ластик">
-        <span class="eraser-tip"></span><span class="eraser-body"></span>
-      </button>
-      <div class="pill">
-        <div class="palette" id="palette">
-          <button class="swatch active" data-color="1" style="--c:#cfa9f0" title="Желе"></button>
-          <button class="swatch" data-color="2" style="--c:#f2dd8a" title="Батут + реверб"></button>
-          <button class="swatch" data-color="3" style="--c:#8fd8f0" title="Центрифуга + delay"></button>
-          <button class="swatch" data-color="4" style="--c:#a3e69d" title="Арпеджиатор"></button>
-          <button class="swatch" data-color="5" style="--c:#f7b3c8" title="Сплиттер"></button>
-        </div>
-        <button id="clearBtn" title="Очистить всё">✕</button>
-      </div>
-      <button id="playBtn" class="play" title="Пауза / старт">⏸</button>
-    </div>
+
+    <button id="playBtn" class="play" title="Пауза / старт" aria-label="Пауза / старт">
+      <svg class="ic-pause" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+        <rect x="7" y="5" width="3.6" height="14" rx="1.6" fill="#fff" />
+        <rect x="13.4" y="5" width="3.6" height="14" rx="1.6" fill="#fff" />
+      </svg>
+      <svg class="ic-play" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" style="display:none">
+        <path d="M9 7.5 L9 16.5 L16.8 12 Z" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" />
+      </svg>
+    </button>
   </div>
 
 </body>
