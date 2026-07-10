@@ -1,12 +1,30 @@
 import Matter from 'matter-js';
 import * as Tone from 'tone';
 
-const { Engine, Composite, Bodies, Body, Events, Query } = Matter;
+const { Engine, Composite, Bodies, Body, Events } = Matter;
+
+// ---------- сетка ----------
+const CELL = 16;
+let W = 0, H = 0, COLS = 0, ROWS = 0;
+let grid = new Uint8Array(0); // 0 пусто, иначе id цвета
+
+// id цветов и их роли
+const JELLY = 1, BOUNCE = 2, SPIN = 3, ARP = 4, SPLIT = 5;
+
+const CELL_FILL = {
+  [JELLY]: '#cfa9f0',
+  [BOUNCE]: '#f2dd8a',
+  [SPIN]: '#8fd8f0',
+  [ARP]: '#a3e69d',
+  [SPLIT]: '#f7b3c8',
+};
 
 // ---------- canvas ----------
 const canvas = document.getElementById('scene');
 const ctx = canvas.getContext('2d');
-let W = 0, H = 0;
+const gridCanvas = document.createElement('canvas');
+const gctx = gridCanvas.getContext('2d');
+let gridDirty = true;
 
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -14,37 +32,54 @@ function resize() {
   H = window.innerHeight;
   canvas.width = W * dpr;
   canvas.height = H * dpr;
-  // явный CSS-размер, чтобы координаты указателя точно совпадали с рисованием
   canvas.style.width = W + 'px';
   canvas.style.height = H + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-resize();
-window.addEventListener('resize', () => { resize(); placeEmitter(); });
-window.addEventListener('orientationchange', () => { resize(); placeEmitter(); });
+  gridCanvas.width = W * dpr;
+  gridCanvas.height = H * dpr;
+  gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-// высота «чёлки» / статус-бара, чтобы эмиттер не прятался под неё
+  const cols = Math.ceil(W / CELL);
+  const rows = Math.ceil(H / CELL);
+  if (cols !== COLS || rows !== ROWS) {
+    const next = new Uint8Array(cols * rows);
+    for (let y = 0; y < Math.min(rows, ROWS); y++)
+      for (let x = 0; x < Math.min(cols, COLS); x++)
+        next[y * cols + x] = grid[y * COLS + x];
+    COLS = cols;
+    ROWS = rows;
+    grid = next;
+    rebuildSolidBodies();
+  }
+  gridDirty = true;
+}
+
 function safeTop() {
   const v = getComputedStyle(document.documentElement).getPropertyValue('--sat');
   return parseFloat(v) || 0;
 }
 
 // ---------- audio ----------
-// Три шины: сухая нота, delay (голубые преграды), bitcrush (красные)
 const master = new Tone.Limiter(-2).toDestination();
 
-const buses = {
-  normal: new Tone.Gain(0.9).connect(master),
-  delay: new Tone.FeedbackDelay(0.32, 0.6).connect(master),
-  crush: new Tone.Filter(2200, 'lowpass').connect(master),
-};
-const crusher = new Tone.BitCrusher(4).connect(buses.crush);
+// жёлтый: щипок с огромным реверб-хвостом
+const reverb = new Tone.Reverb({ decay: 7, preDelay: 0.02, wet: 0.55 }).connect(master);
+// синий: feedback delay для центрифуги
+const delayBus = new Tone.FeedbackDelay(0.28, 0.55).connect(master);
+// зелёный: пинг-понг для зиппер-арпеджио
+const arpBus = new Tone.PingPongDelay(0.13, 0.35).connect(master);
+arpBus.wet.value = 0.4;
+// розовый: хрустящий сплит
+const distBus = new Tone.Filter(2400, 'lowpass').connect(master);
+const dist = new Tone.Distortion(0.7).connect(distBus);
+// фиолетовый: желейные дроны через хорус
+const jellyFx = new Tone.Chorus(0.6, 3.5, 0.4).connect(master).start();
 
 function makeSynth(dest, opts = {}) {
   const s = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: 'triangle' },
     envelope: { attack: 0.002, decay: 0.28, sustain: 0, release: 0.25 },
-    volume: -6,
+    volume: -8,
     ...opts,
   });
   s.connect(dest);
@@ -52,16 +87,34 @@ function makeSynth(dest, opts = {}) {
 }
 
 const synths = {
-  normal: makeSynth(buses.normal),
-  delay: makeSynth(buses.delay),
-  crush: makeSynth(crusher, { oscillator: { type: 'square' }, volume: -10 }),
-  spawn: makeSynth(buses.normal, { volume: -18, oscillator: { type: 'sine' } }),
+  bounce: makeSynth(reverb),
+  spin: makeSynth(delayBus, { volume: -10 }),
+  arp: makeSynth(arpBus, {
+    volume: -12,
+    envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.08 },
+  }),
+  split: makeSynth(dist, { oscillator: { type: 'square' }, volume: -16 }),
+  spawn: makeSynth(master, { volume: -20, oscillator: { type: 'sine' } }),
 };
+
+// пул голосов для желе: дрон живёт, пока шарик внутри
+const jellyVoices = Array.from({ length: 4 }, () => {
+  const v = new Tone.FMSynth({
+    harmonicity: 2.01,
+    modulationIndex: 6,
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.6, decay: 0.3, sustain: 0.55, release: 1.4 },
+    modulation: { type: 'triangle' },
+    modulationEnvelope: { attack: 1.2, decay: 0.5, sustain: 0.4, release: 1.2 },
+    volume: -14,
+  }).connect(jellyFx);
+  v._busy = false;
+  return v;
+});
 
 let audioReady = false;
 
-// Валидный тихий WAV (генерим в рантайме — data-URI из прошлой версии был битый).
-// Зацикленный <audio> переводит аудиосессию iOS в режим playback,
+// Зацикленный тихий <audio> переводит аудиосессию iOS в режим playback,
 // поэтому WebAudio звучит даже при включённом беззвучном переключателе.
 function makeSilentWavUrl(seconds = 1) {
   const sampleRate = 8000;
@@ -75,14 +128,14 @@ function makeSilentWavUrl(seconds = 1) {
   str(8, 'WAVE');
   str(12, 'fmt ');
   view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);            // PCM
-  view.setUint16(22, 1, true);            // моно
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
   view.setUint32(24, sampleRate, true);
   view.setUint32(28, sampleRate * 2, true);
   view.setUint16(32, 2, true);
   view.setUint16(34, 16, true);
   str(36, 'data');
-  view.setUint32(40, dataSize, true);     // сэмплы = нули = тишина
+  view.setUint32(40, dataSize, true);
   return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
 }
 
@@ -105,112 +158,280 @@ async function ensureAudio() {
   audioReady = true;
 }
 
-// Пентатоника — любые столкновения звучат консонансно
 const SCALE = ['C4', 'D4', 'E4', 'G4', 'A4', 'C5', 'D5', 'E5', 'G5', 'A5'];
 
-function play(type, note, velocity) {
+function play(synth, noteIdx, velocity, dur = 0.2) {
   if (!audioReady) return;
-  // лёгкий джиттер, чтобы одновременные удары не конфликтовали по времени
+  const note = SCALE[((noteIdx % SCALE.length) + SCALE.length) % SCALE.length];
   const t = Tone.now() + Math.random() * 0.008;
-  synths[type].triggerAttackRelease(note, 0.2, t, velocity);
+  synth.triggerAttackRelease(note, dur, t, velocity);
 }
 
-// ---------- physics ----------
+// ---------- физика ----------
 const engine = Engine.create({ gravity: { x: 0, y: 1 } });
 const world = engine.world;
 
-const BALL_R = 9;
-const BAR_THICK = 12;
-const MAX_BALLS = 90;
-
-const TYPE_COLORS = { normal: '#e8e8f0', delay: '#4da3ff', crush: '#ff4d6d' };
+const BALL_R = 7;
+const MAX_BALLS = 70;
+const BASE_FRICTION_AIR = 0.0012;
 
 const balls = [];
-const barriers = [];
-const lastHit = new Map(); // "ballId:barId" -> timestamp, анти-дребезг
+const solidBodies = new Map(); // idx ячейки -> статическое тело (жёлтые)
+const lastHit = new Map();
+const cellFlash = new Map(); // idx -> 0..1
 
 let noteIndex = 0;
-// эмиттер жёстко прибит по центру ширины у самого верха, не перетаскивается
-const emitter = { x: W * 0.5, y: 24 };
+const emitter = { x: 0, y: 0 };
 function placeEmitter() {
   emitter.x = W / 2;
   emitter.y = Math.round(safeTop() + 18);
 }
-placeEmitter();
 
-function spawnBall() {
-  const note = SCALE[noteIndex % SCALE.length];
-  const hue = (noteIndex * 36) % 360;
-  noteIndex++;
-  const b = Bodies.circle(emitter.x + (Math.random() - 0.5) * 3, emitter.y, BALL_R, {
+function cellIdxAt(x, y) {
+  const cx = Math.floor(x / CELL);
+  const cy = Math.floor(y / CELL);
+  if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) return -1;
+  return cy * COLS + cx;
+}
+
+function colorAt(x, y) {
+  const i = cellIdxAt(x, y);
+  return i < 0 ? 0 : grid[i];
+}
+
+function addSolidBody(idx) {
+  const cx = idx % COLS, cy = (idx / COLS) | 0;
+  const b = Bodies.rectangle(cx * CELL + CELL / 2, cy * CELL + CELL / 2, CELL, CELL, {
+    isStatic: true,
+    restitution: 0.9,
+    friction: 0.01,
+    label: 'cell',
+  });
+  b.plugin.idx = idx;
+  Composite.add(world, b);
+  solidBodies.set(idx, b);
+}
+
+function removeSolidBody(idx) {
+  const b = solidBodies.get(idx);
+  if (b) { Composite.remove(world, b); solidBodies.delete(idx); }
+}
+
+function rebuildSolidBodies() {
+  solidBodies.forEach((b) => Composite.remove(world, b));
+  solidBodies.clear();
+  for (let i = 0; i < grid.length; i++) if (grid[i] === BOUNCE) addSolidBody(i);
+}
+
+function setCell(cx, cy, color) {
+  if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) return;
+  const idx = cy * COLS + cx;
+  if (grid[idx] === color) return;
+  if (grid[idx] === BOUNCE) removeSolidBody(idx);
+  grid[idx] = color;
+  if (color === BOUNCE) addSolidBody(idx);
+  gridDirty = true;
+}
+
+function spawnBall(noteIdx = noteIndex++, x = emitter.x, y = emitter.y, vel = null, gen = 0) {
+  if (balls.length >= MAX_BALLS) return null;
+  const b = Bodies.circle(x + (Math.random() - 0.5) * 2, y, BALL_R, {
     restitution: 0.72,
     friction: 0.005,
-    frictionAir: 0.0012,
+    frictionAir: BASE_FRICTION_AIR,
     density: 0.002,
     label: 'ball',
   });
-  b.plugin.note = note;
-  b.plugin.hue = hue;
-  b.plugin.flash = 0;
+  b.plugin.noteIdx = noteIdx;
+  b.plugin.hue = (noteIdx * 36) % 360;
+  b.plugin.zone = 0;
+  b.plugin.gen = gen;
+  b.plugin.spin = null;
+  b.plugin.jellyVoice = null;
+  b.plugin.arp = null;
+  b.plugin.splitCool = 0;
+  b.plugin.noSpinUntil = 0;
+  if (vel) Body.setVelocity(b, vel);
   Composite.add(world, b);
   balls.push(b);
-  play('spawn', note, 0.25);
-
-  if (balls.length > MAX_BALLS) removeBall(balls[0]);
+  return b;
 }
 
 function removeBall(b) {
+  releaseJelly(b);
   Composite.remove(world, b);
   const i = balls.indexOf(b);
   if (i !== -1) balls.splice(i, 1);
+  lastHit.forEach((_, k) => { if (k.startsWith(b.id + ':')) lastHit.delete(k); });
 }
 
-function createBarrier(x1, y1, x2, y2, type) {
-  const len = Math.hypot(x2 - x1, y2 - y1);
-  if (len < 24) return null;
-  const angle = Math.atan2(y2 - y1, x2 - x1);
-  const body = Bodies.rectangle((x1 + x2) / 2, (y1 + y2) / 2, len, BAR_THICK, {
-    isStatic: true,
-    angle,
-    restitution: 0.6,
-    friction: 0.01,
-    label: 'barrier',
-  });
-  body.plugin.type = type;
-  body.plugin.len = len;
-  body.plugin.flash = 0;
-  Composite.add(world, body);
-  barriers.push(body);
-  return body;
-}
-
-function removeBarrier(b) {
-  Composite.remove(world, b);
-  const i = barriers.indexOf(b);
-  if (i !== -1) barriers.splice(i, 1);
-}
-
+// жёлтые ячейки — обычные столкновения
 Events.on(engine, 'collisionStart', (e) => {
   for (const pair of e.pairs) {
     const { bodyA, bodyB } = pair;
     const ball = bodyA.label === 'ball' ? bodyA : bodyB.label === 'ball' ? bodyB : null;
-    const bar = bodyA.label === 'barrier' ? bodyA : bodyB.label === 'barrier' ? bodyB : null;
-    if (!ball || !bar) continue;
+    const cell = bodyA.label === 'cell' ? bodyA : bodyB.label === 'cell' ? bodyB : null;
+    if (!ball || !cell) continue;
 
     const speed = Math.hypot(ball.velocity.x, ball.velocity.y);
-    if (speed < 0.7) continue; // покоящийся контакт — не звучит
+    if (speed < 0.7) continue;
 
-    const key = ball.id + ':' + bar.id;
+    const key = ball.id + ':' + cell.id;
     const now = performance.now();
     if (now - (lastHit.get(key) || 0) < 130) continue;
     lastHit.set(key, now);
 
-    const velocity = Math.min(1, 0.3 + speed / 14);
-    play(bar.plugin.type, ball.plugin.note, velocity);
-    bar.plugin.flash = 1;
-    ball.plugin.flash = 1;
+    play(synths.bounce, ball.plugin.noteIdx, Math.min(1, 0.3 + speed / 14));
+    cellFlash.set(cell.plugin.idx, 1);
   }
 });
+
+// ---------- эффекты полей ----------
+
+function attackJelly(b) {
+  const voice = jellyVoices.find((v) => !v._busy);
+  if (!voice) return;
+  voice._busy = true;
+  if (audioReady) {
+    const note = SCALE[b.plugin.noteIdx % SCALE.length];
+    voice.triggerAttack(note, Tone.now(), 0.5);
+  }
+  b.plugin.jellyVoice = voice;
+  b.plugin.jellyT = 0;
+}
+
+function releaseJelly(b) {
+  const voice = b.plugin.jellyVoice;
+  if (!voice) return;
+  b.plugin.jellyVoice = null;
+  voice.triggerRelease();
+  setTimeout(() => { voice._busy = false; }, 1600);
+}
+
+// центр и радиус связной кляксы синих ячеек (BFS от точки входа)
+function blueBlob(startIdx) {
+  const seen = new Set([startIdx]);
+  const queue = [startIdx];
+  let sx = 0, sy = 0, n = 0;
+  while (queue.length && n < 300) {
+    const i = queue.pop();
+    const cx = i % COLS, cy = (i / COLS) | 0;
+    sx += cx; sy += cy; n++;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cx + dx, ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+      const j = ny * COLS + nx;
+      if (!seen.has(j) && grid[j] === SPIN) { seen.add(j); queue.push(j); }
+    }
+  }
+  const mx = (sx / n + 0.5) * CELL;
+  const my = (sy / n + 0.5) * CELL;
+  const radius = Math.max(CELL, Math.sqrt(n / Math.PI) * CELL);
+  return { mx, my, radius };
+}
+
+function updateBallEffects(b, dt, now) {
+  // --- центрифуга: пока крутимся, кинематика своя ---
+  if (b.plugin.spin) {
+    const s = b.plugin.spin;
+    s.t += dt;
+    s.omega = 0.004 + s.t * 0.0000045;
+    s.ang += s.omega * dt;
+    s.r += dt * 0.012 * (1 + s.t / 700);
+    const px = s.mx + Math.cos(s.ang) * s.r;
+    const py = s.my + Math.sin(s.ang) * s.r;
+    Body.setPosition(b, { x: px, y: py });
+    const speed = s.omega * s.r * 16;
+    Body.setVelocity(b, { x: -Math.sin(s.ang) * speed, y: Math.cos(s.ang) * speed });
+
+    if (now >= s.nextTrig) {
+      s.step++;
+      play(synths.spin, b.plugin.noteIdx + s.step, 0.35, 0.12);
+      s.nextTrig = now + Math.max(90, 260 - s.t / 12);
+    }
+    if (s.r > s.radius + CELL * 0.8) {
+      // выплёвываем: октава вверх, тангенциальный вылет
+      play(synths.spin, b.plugin.noteIdx + 5, 0.6, 0.25);
+      b.plugin.spin = null;
+      b.plugin.noSpinUntil = now + 800;
+    }
+    return;
+  }
+
+  const zone = colorAt(b.position.x, b.position.y);
+  const prev = b.plugin.zone;
+
+  if (zone !== prev) {
+    // выходы
+    if (prev === JELLY) {
+      b.frictionAir = BASE_FRICTION_AIR;
+      releaseJelly(b);
+    }
+    if (prev === ARP) {
+      b.frictionAir = BASE_FRICTION_AIR;
+      b.plugin.arp = null;
+    }
+    // входы
+    if (zone === JELLY) {
+      b.frictionAir = 0.09;
+      Body.setVelocity(b, { x: b.velocity.x * 0.25, y: b.velocity.y * 0.25 });
+      attackJelly(b);
+    }
+    if (zone === ARP) {
+      b.frictionAir = 0.05;
+      b.plugin.arp = { next: now, step: 0 };
+    }
+    if (zone === SPIN && now >= b.plugin.noSpinUntil) {
+      const { mx, my, radius } = blueBlob(cellIdxAt(b.position.x, b.position.y));
+      b.plugin.spin = {
+        mx, my, radius,
+        ang: Math.atan2(b.position.y - my, b.position.x - mx),
+        r: Math.max(4, Math.hypot(b.position.x - mx, b.position.y - my) * 0.5),
+        t: 0, omega: 0.004, step: 0, nextTrig: now,
+      };
+      play(synths.spin, b.plugin.noteIdx, 0.5, 0.2);
+    }
+    if (zone === SPLIT && now >= b.plugin.splitCool && b.plugin.gen < 2 && balls.length < MAX_BALLS) {
+      b.plugin.splitCool = now + 500;
+      const v = b.velocity;
+      const rot = (vec, a) => ({
+        x: vec.x * Math.cos(a) - vec.y * Math.sin(a),
+        y: vec.x * Math.sin(a) + vec.y * Math.cos(a),
+      });
+      Body.setVelocity(b, rot(v, -0.45));
+      const clone = spawnBall(
+        b.plugin.noteIdx + 2, b.position.x, b.position.y, rot(v, 0.45), b.plugin.gen + 1
+      );
+      if (clone) clone.plugin.splitCool = now + 500;
+      play(synths.split, b.plugin.noteIdx, 0.7, 0.15);
+    }
+    b.plugin.zone = zone;
+  }
+
+  // --- поведение внутри полей ---
+  if (zone === JELLY) {
+    b.plugin.jellyT = (b.plugin.jellyT || 0) + dt;
+    const t = b.plugin.jellyT;
+    // почти полная компенсация гравитации + ленивое покачивание
+    const g = b.mass * 0.001 * engine.gravity.y;
+    Body.applyForce(b, b.position, {
+      x: Math.sin(t * 0.003 + b.id) * g * 0.35,
+      y: -g * 0.93,
+    });
+    const voice = b.plugin.jellyVoice;
+    if (voice) {
+      voice.detune.value = Math.sin(t * 0.0022 + b.id) * 45;
+      voice.modulationIndex.value = 5 + 4 * Math.sin(t * 0.0011);
+    }
+  } else if (zone === ARP && b.plugin.arp) {
+    const a = b.plugin.arp;
+    if (now >= a.next) {
+      play(synths.arp, b.plugin.noteIdx + a.step, 0.4, 0.08);
+      a.step++;
+      a.next = now + 110;
+    }
+  }
+}
 
 // ---------- стартовый экран ----------
 const startScreen = document.getElementById('start-screen');
@@ -218,24 +439,38 @@ let started = false;
 document.getElementById('startBtn').addEventListener('click', async () => {
   await ensureAudio();
   placeEmitter();
-  if (!barriers.length) seedDemo();
+  if (!grid.some((c) => c !== 0)) seedDemo();
   started = true;
   startScreen.classList.add('hidden');
   setTimeout(() => startScreen.remove(), 450);
 });
 
-// демо-преграды создаём на старте — к этому моменту размеры вьюпорта стабильны
+function paintBlob(cx, cy, w, h, color) {
+  for (let y = cy; y < cy + h; y++)
+    for (let x = cx; x < cx + w; x++)
+      setCell(x, y, color);
+}
+
 function seedDemo() {
-  createBarrier(W * 0.22, H * 0.32, W * 0.55, H * 0.42, 'normal');
-  createBarrier(W * 0.78, H * 0.52, W * 0.45, H * 0.62, 'delay');
-  createBarrier(W * 0.18, H * 0.72, W * 0.5, H * 0.8, 'crush');
+  const mx = (COLS / 2) | 0;
+  // жёлтая лесенка
+  for (let i = 0; i < 6; i++) paintBlob(mx - 6 + i, ((ROWS * 0.24) | 0) + i, 2, 1, BOUNCE);
+  // синяя клякса
+  paintBlob(mx + 1, (ROWS * 0.42) | 0, 6, 3, SPIN);
+  paintBlob(mx + 2, ((ROWS * 0.42) | 0) - 1, 3, 1, SPIN);
+  // фиолетовое желе
+  paintBlob(mx - 8, (ROWS * 0.6) | 0, 9, 4, JELLY);
+  paintBlob(mx - 6, ((ROWS * 0.6) | 0) + 4, 6, 2, JELLY);
+  // зелёная полоска и розовая точка
+  paintBlob(mx - 2, (ROWS * 0.8) | 0, 8, 2, ARP);
+  paintBlob(mx - 7, (ROWS * 0.86) | 0, 2, 2, SPLIT);
 }
 
 // ---------- state / UI ----------
 let running = true;
 let bpm = 120;
-let tool = 'draw';
-let barrierType = 'normal';
+let tool = 'paint'; // paint | erase  (перетаскивание пока закомментировано)
+let paintColor = JELLY;
 
 const tempoInput = document.getElementById('tempo');
 const bpmLabel = document.getElementById('bpmLabel');
@@ -247,165 +482,160 @@ tempoInput.addEventListener('input', () => {
 const playBtn = document.getElementById('playBtn');
 playBtn.addEventListener('click', () => {
   running = !running;
-  playBtn.textContent = running ? '⏸' : '▶️';
+  playBtn.textContent = running ? '⏸' : '▶';
 });
 
 document.getElementById('clearBtn').addEventListener('click', () => {
-  [...barriers].forEach(removeBarrier);
+  grid.fill(0);
+  rebuildSolidBodies();
+  gridDirty = true;
 });
 
-function bindGroup(id, attr, onPick) {
-  const el = document.getElementById(id);
-  el.addEventListener('click', (e) => {
-    const btn = e.target.closest(`[data-${attr}]`);
-    if (!btn) return;
-    el.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
-    onPick(btn.dataset[attr]);
-  });
+const eraserBtn = document.getElementById('eraserBtn');
+const palette = document.getElementById('palette');
+
+function setTool(next, color = paintColor) {
+  tool = next;
+  paintColor = color;
+  eraserBtn.classList.toggle('active', tool === 'erase');
+  palette.querySelectorAll('.swatch').forEach((s) =>
+    s.classList.toggle('active', tool === 'paint' && Number(s.dataset.color) === paintColor));
 }
-bindGroup('tools', 'tool', (v) => (tool = v));
-bindGroup('types', 'type', (v) => {
-  barrierType = v;
-  // выбор типа — это намерение рисовать
-  tool = 'draw';
-  document.querySelectorAll('#tools button').forEach((b) =>
-    b.classList.toggle('active', b.dataset.tool === 'draw'));
+
+eraserBtn.addEventListener('click', () => setTool(tool === 'erase' ? 'paint' : 'erase'));
+palette.addEventListener('click', (e) => {
+  const sw = e.target.closest('.swatch');
+  if (sw) setTool('paint', Number(sw.dataset.color));
 });
 
-// ---------- pointer: рисование / перемещение / удаление ----------
-let drawing = null; // {x1,y1,x2,y2}
-let dragging = null; // {body, dx, dy}
-const HIT_TOL = 24;  // допуск попадания по преграде (палец толще линии)
+// ---------- pointer: покраска / ластик ----------
+let painting = false;
+let lastPoint = null;
 
 function pos(e) {
   const r = canvas.getBoundingClientRect();
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 
-function distToSegment(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1, dy = y2 - y1;
-  const l2 = dx * dx + dy * dy;
-  if (l2 === 0) return Math.hypot(px - x1, py - y1);
-  let t = ((px - x1) * dx + (py - y1) * dy) / l2;
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
-}
-
-function barrierEndpoints(b) {
-  const half = b.plugin.len / 2;
-  const c = Math.cos(b.angle), s = Math.sin(b.angle);
-  return [
-    b.position.x - half * c, b.position.y - half * s,
-    b.position.x + half * c, b.position.y + half * s,
-  ];
-}
-
-// ближайшая преграда в пределах допуска (перебор с конца — верхняя первой)
-function barrierAt(p, tol = HIT_TOL) {
-  let best = null, bestD = tol;
-  for (let i = barriers.length - 1; i >= 0; i--) {
-    const [x1, y1, x2, y2] = barrierEndpoints(barriers[i]);
-    const d = distToSegment(p.x, p.y, x1, y1, x2, y2);
-    if (d <= bestD) { bestD = d; best = barriers[i]; }
+function applyAt(p) {
+  const cx = Math.floor(p.x / CELL);
+  const cy = Math.floor(p.y / CELL);
+  if (tool === 'paint') {
+    setCell(cx, cy, paintColor);
+  } else {
+    // ластик 4×4 ячейки
+    for (let y = cy - 2; y < cy + 2; y++)
+      for (let x = cx - 2; x < cx + 2; x++)
+        setCell(x, y, 0);
   }
-  return best;
+}
+
+function applyStroke(from, to) {
+  const steps = Math.max(1, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / (CELL / 2)));
+  for (let i = 0; i <= steps; i++) {
+    applyAt({ x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps });
+  }
 }
 
 canvas.addEventListener('pointerdown', (e) => {
   ensureAudio();
   canvas.setPointerCapture(e.pointerId);
-  const p = pos(e);
-
-  if (tool === 'draw') {
-    drawing = { x1: p.x, y1: p.y, x2: p.x, y2: p.y };
-  } else if (tool === 'move') {
-    const body = barrierAt(p);
-    if (body) dragging = { body, dx: body.position.x - p.x, dy: body.position.y - p.y };
-  } else if (tool === 'erase') {
-    const body = barrierAt(p);
-    if (body) removeBarrier(body);
-  }
+  painting = true;
+  lastPoint = pos(e);
+  applyAt(lastPoint);
 });
 
 canvas.addEventListener('pointermove', (e) => {
+  if (!painting) return;
   const p = pos(e);
-  if (drawing) {
-    drawing.x2 = p.x;
-    drawing.y2 = p.y;
-  } else if (dragging) {
-    Body.setPosition(dragging.body, { x: p.x + dragging.dx, y: p.y + dragging.dy });
-  } else if (tool === 'erase' && e.buttons) {
-    const body = barrierAt(p);
-    if (body) removeBarrier(body);
-  }
+  applyStroke(lastPoint, p);
+  lastPoint = p;
 });
 
-canvas.addEventListener('pointerup', () => {
-  if (drawing) {
-    createBarrier(drawing.x1, drawing.y1, drawing.x2, drawing.y2, barrierType);
-    drawing = null;
-  }
-  dragging = null;
-});
-canvas.addEventListener('pointercancel', () => {
-  drawing = null;
-  dragging = null;
-});
+canvas.addEventListener('pointerup', () => { painting = false; lastPoint = null; });
+canvas.addEventListener('pointercancel', () => { painting = false; lastPoint = null; });
 
-// ---------- render / loop ----------
-function drawBarrier(b) {
-  const color = TYPE_COLORS[b.plugin.type];
-  const flash = b.plugin.flash;
-  const half = b.plugin.len / 2;
+/*
+// перетаскивание преград (закомментировано на время сеточной версии)
+// function barrierAt(p, tol) { ... }
+// canvas pointerdown: dragging = { body, dx, dy }
+// canvas pointermove: Body.setPosition(dragging.body, ...)
+*/
+
+// ---------- рендер ----------
+function redrawGrid() {
+  gctx.clearRect(0, 0, W, H);
+  gctx.fillStyle = '#f6f2ea';
+  gctx.fillRect(0, 0, W, H);
+
+  const at = (x, y) => (x < 0 || y < 0 || x >= COLS || y >= ROWS ? 0 : grid[y * COLS + x]);
+
+  for (let cy = 0; cy < ROWS; cy++) {
+    for (let cx = 0; cx < COLS; cx++) {
+      const c = grid[cy * COLS + cx];
+      const x = cx * CELL, y = cy * CELL;
+      if (!c) {
+        gctx.fillStyle = '#ded4c4';
+        gctx.beginPath();
+        gctx.arc(x + CELL / 2, y + CELL / 2, 1.6, 0, Math.PI * 2);
+        gctx.fill();
+        continue;
+      }
+      // скругляем только внешние углы кляксы
+      const r = 6;
+      const tl = at(cx - 1, cy) !== c && at(cx, cy - 1) !== c ? r : 0;
+      const tr = at(cx + 1, cy) !== c && at(cx, cy - 1) !== c ? r : 0;
+      const br = at(cx + 1, cy) !== c && at(cx, cy + 1) !== c ? r : 0;
+      const bl = at(cx - 1, cy) !== c && at(cx, cy + 1) !== c ? r : 0;
+      gctx.fillStyle = CELL_FILL[c];
+      gctx.beginPath();
+      gctx.roundRect(x, y, CELL + 0.5, CELL + 0.5, [tl, tr, br, bl]);
+      gctx.fill();
+      gctx.fillStyle = 'rgba(255,255,255,0.85)';
+      gctx.beginPath();
+      gctx.arc(x + CELL / 2, y + CELL / 2, 1.8, 0, Math.PI * 2);
+      gctx.fill();
+    }
+  }
+  gridDirty = false;
+}
+
+function drawEmitter(t) {
+  const pulse = 1 + 0.1 * Math.sin(t / 250);
   ctx.save();
-  ctx.translate(b.position.x, b.position.y);
-  ctx.rotate(b.angle);
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = color;
-  ctx.globalAlpha = 0.55 + flash * 0.45;
-  ctx.lineWidth = BAR_THICK * (1 + flash * 0.35);
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 6 + flash * 26;
+  ctx.strokeStyle = '#26222b';
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(-half, 0);
-  ctx.lineTo(half, 0);
+  ctx.arc(emitter.x, emitter.y, 11 * pulse, 0, Math.PI * 2);
   ctx.stroke();
+  ctx.fillStyle = '#26222b';
+  ctx.beginPath();
+  ctx.arc(emitter.x, emitter.y, 3.5, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
-  b.plugin.flash = Math.max(0, flash - 0.06);
 }
 
 function drawBall(b) {
-  const flash = b.plugin.flash;
   ctx.save();
-  ctx.fillStyle = `hsl(${b.plugin.hue} 85% ${62 + flash * 25}%)`;
-  ctx.shadowColor = ctx.fillStyle;
-  ctx.shadowBlur = 8 + flash * 22;
+  ctx.fillStyle = `hsl(${b.plugin.hue} 70% 55%)`;
   ctx.beginPath();
   ctx.arc(b.position.x, b.position.y, BALL_R, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
-  b.plugin.flash = Math.max(0, flash - 0.08);
 }
 
-function drawEmitter(t) {
-  const pulse = 1 + 0.12 * Math.sin(t / 250);
-  ctx.save();
-  ctx.strokeStyle = '#b18cff';
-  ctx.shadowColor = '#b18cff';
-  ctx.shadowBlur = 14;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(emitter.x, emitter.y, 14 * pulse, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.globalAlpha = 0.5;
-  ctx.beginPath();
-  ctx.arc(emitter.x, emitter.y, 4, 0, Math.PI * 2);
-  ctx.fillStyle = '#b18cff';
-  ctx.fill();
-  ctx.restore();
+function drawFlashes() {
+  cellFlash.forEach((v, idx) => {
+    const cx = idx % COLS, cy = (idx / COLS) | 0;
+    ctx.fillStyle = `rgba(255,255,255,${v * 0.7})`;
+    ctx.fillRect(cx * CELL, cy * CELL, CELL, CELL);
+    const next = v - 0.07;
+    if (next <= 0) cellFlash.delete(idx);
+    else cellFlash.set(idx, next);
+  });
 }
 
+// ---------- loop ----------
 let last = performance.now();
 let spawnAcc = 0;
 
@@ -418,40 +648,32 @@ function frame(now) {
     const interval = 60000 / bpm;
     while (spawnAcc >= interval) {
       spawnAcc -= interval;
-      spawnBall();
+      const b = spawnBall();
+      if (b) play(synths.spawn, b.plugin.noteIdx, 0.2, 0.1);
     }
   }
+
+  for (const b of balls) updateBallEffects(b, dt, now);
 
   Engine.update(engine, dt);
 
-  // мячи, улетевшие за экран, убираем
   for (let i = balls.length - 1; i >= 0; i--) {
     const b = balls[i];
-    if (b.position.y > H + 120 || b.position.x < -120 || b.position.x > W + 120) {
-      lastHit.forEach((_, k) => { if (k.startsWith(b.id + ':')) lastHit.delete(k); });
-      removeBall(b);
-    }
+    if (b.position.y > H + 120 || b.position.x < -120 || b.position.x > W + 120) removeBall(b);
   }
 
+  if (gridDirty) redrawGrid();
   ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(gridCanvas, 0, 0, W, H);
+  drawFlashes();
   drawEmitter(now);
-  barriers.forEach(drawBarrier);
   balls.forEach(drawBall);
-
-  if (drawing) {
-    ctx.save();
-    ctx.strokeStyle = TYPE_COLORS[barrierType];
-    ctx.globalAlpha = 0.5;
-    ctx.lineWidth = BAR_THICK;
-    ctx.lineCap = 'round';
-    ctx.setLineDash([4, 10]);
-    ctx.beginPath();
-    ctx.moveTo(drawing.x1, drawing.y1);
-    ctx.lineTo(drawing.x2, drawing.y2);
-    ctx.stroke();
-    ctx.restore();
-  }
 
   requestAnimationFrame(frame);
 }
+
+resize();
+placeEmitter();
+window.addEventListener('resize', () => { resize(); placeEmitter(); });
+window.addEventListener('orientationchange', () => { resize(); placeEmitter(); });
 requestAnimationFrame(frame);

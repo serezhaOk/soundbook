@@ -9,8 +9,8 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #0b0b12;
-  color: #e8e8f0;
+  background: #f6f2ea;
+  color: #26222b;
   font-family: system-ui, -apple-system, sans-serif;
   touch-action: none;
   overscroll-behavior: none;
@@ -36,7 +36,7 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  background: radial-gradient(120% 100% at 50% 0%, #171728 0%, #0b0b12 70%);
+  background: #f6f2ea;
   transition: opacity 0.4s ease;
 }
 
@@ -55,8 +55,7 @@ html, body {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #b18cff;
-  box-shadow: 0 0 24px #b18cff;
+  background: #cfa9f0;
   animation: bounce 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 
@@ -75,7 +74,7 @@ html, body {
 #start-screen p {
   margin: 0 0 22px;
   font-size: 14px;
-  color: #9a9ab0;
+  color: #948e85;
 }
 
 #startBtn {
@@ -83,96 +82,158 @@ html, body {
   height: 54px;
   border: none;
   border-radius: 27px;
-  background: #b18cff;
-  color: #14081f;
+  background: #26222b;
+  color: #f6f2ea;
   font-size: 17px;
   font-weight: 600;
   cursor: pointer;
   touch-action: manipulation;
-  box-shadow: 0 0 32px rgba(177, 140, 255, 0.45);
+  box-shadow: 0 8px 24px rgba(38, 34, 43, 0.25);
 }
 
 #startBtn:active { transform: scale(0.97); }
 
-/* ---------- нижняя панель (mobile-first) ---------- */
+/* ---------- нижняя панель ---------- */
 
 #ui {
   position: fixed;
   left: 8px;
   right: 8px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border-radius: 16px;
-  background: rgba(20, 20, 32, 0.78);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  gap: 8px;
+  align-items: center;
 }
 
-.row {
+.tempo-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex-wrap: wrap;
+  gap: 8px;
+  width: min(100%, 420px);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(38, 34, 43, 0.08);
 }
-
-.group {
-  display: flex;
-  gap: 3px;
-  padding: 2px;
-  border-radius: 11px;
-  background: rgba(255, 255, 255, 0.05);
-  flex-shrink: 1;
-  min-width: 0;
-}
-
-button {
-  min-width: 38px;
-  height: 36px;
-  padding: 0 8px;
-  border: none;
-  border-radius: 9px;
-  background: transparent;
-  color: #c8c8d8;
-  font-size: 14px;
-  cursor: pointer;
-  touch-action: manipulation;
-  flex-shrink: 1;
-}
-
-button.active {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-}
-
-button.t-normal.active { box-shadow: inset 0 0 0 1.5px #e8e8f0; }
-button.t-delay.active  { box-shadow: inset 0 0 0 1.5px #4da3ff; color: #4da3ff; }
-button.t-crush.active  { box-shadow: inset 0 0 0 1.5px #ff4d6d; color: #ff4d6d; }
 
 #tempo {
   flex: 1;
   min-width: 0;
-  width: 100%;
-  accent-color: #b18cff;
+  accent-color: #26222b;
 }
 
 .mono {
   font-variant-numeric: tabular-nums;
   font-size: 13px;
-  color: #9a9ab0;
+  color: #948e85;
   width: 3ch;
   text-align: right;
   flex-shrink: 0;
 }
 
-@media (min-width: 600px) {
-  #ui {
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
-    min-width: 420px;
-  }
+.main-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, 420px);
+  justify-content: space-between;
 }
+
+.pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(38, 34, 43, 0.12);
+}
+
+.palette {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+  padding: 0;
+}
+
+.swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--c);
+  flex-shrink: 1;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.swatch.active {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 2.5px #fff, 0 0 0 4.5px #26222b;
+}
+
+#clearBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #b6afa5;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+/* ластик — розовый кончик + тёмный корпус, как карандашная резинка */
+.eraser {
+  width: 44px;
+  height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(38, 34, 43, 0.18);
+  flex-shrink: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.eraser-tip {
+  width: 100%;
+  height: 40%;
+  background: #ef9a9a;
+}
+
+.eraser-body {
+  width: 100%;
+  height: 60%;
+  background: #26222b;
+}
+
+.eraser.active {
+  transform: translateY(-6px) scale(1.06);
+  box-shadow: 0 0 0 2.5px #f6f2ea, 0 0 0 4.5px #26222b, 0 10px 22px rgba(38, 34, 43, 0.25);
+}
+
+.play {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #26222b;
+  color: #f6f2ea;
+  font-size: 18px;
+  flex-shrink: 0;
+  box-shadow: 0 8px 24px rgba(38, 34, 43, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.play:active { transform: scale(0.95); }
