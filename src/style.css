@@ -29,26 +29,28 @@ html, body {
 
 #gobo {
   position: fixed;
-  inset: -30%;
+  inset: 0; /* ровно во весь вьюпорт */
   z-index: 5;
   pointer-events: none;
   mix-blend-mode: multiply; /* только затемняет — «plus darker» */
   opacity: 0.6; /* мягче: тени деликатные, не чёрные */
+  overflow: hidden;
 }
 
 #gobo::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: url('./blinds.jpg') center / cover no-repeat;
+  /* картинка растянута ровно по вьюпорту — полосы 1:1 */
+  background: url('./blinds.jpg') center / 100% 100% no-repeat;
   will-change: transform;
   animation: gobo-drift 90s ease-in-out infinite alternate;
 }
 
-/* медленный вертикальный дрейф — свет от жалюзи будто чуть смещается */
+/* медленный вертикальный дрейф (внутри лёгкого зума, чтобы не оголять края) */
 @keyframes gobo-drift {
-  from { transform: translate(0, -3%) scale(1.05); }
-  to   { transform: translate(0, 3%) scale(1.05); }
+  from { transform: translateY(-2%) scale(1.06); }
+  to   { transform: translateY(2%) scale(1.06); }
 }
 
 /* ---------- стартовый экран ---------- */
