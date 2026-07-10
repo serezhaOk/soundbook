@@ -11,12 +11,13 @@ let grid = new Uint8Array(0); // 0 пусто, иначе id цвета
 // id цветов и их роли
 const JELLY = 1, BOUNCE = 2, SPIN = 3, ARP = 4, SPLIT = 5;
 
+// цвета точно из палитры макета
 const CELL_FILL = {
-  [JELLY]: '#cfa9f0',
-  [BOUNCE]: '#f2dd8a',
-  [SPIN]: '#8fd8f0',
-  [ARP]: '#a3e69d',
-  [SPLIT]: '#f7b3c8',
+  [JELLY]: '#c9a3ed',
+  [BOUNCE]: '#f6ce5c',
+  [SPIN]: '#83c9ed',
+  [ARP]: '#a7e29b',
+  [SPLIT]: '#f58f8b',
 };
 
 // ---------- canvas ----------
@@ -357,8 +358,8 @@ Events.on(engine, 'collisionStart', (e) => {
     // джус: тряска, сквош, брызги и ударная волна
     shake(Math.min(6, speed * 0.4));
     ball.plugin.squash = 1;
-    burst(ball.position.x, ball.position.y, '#eccb54', 4 + Math.min(8, speed | 0), 2 + speed * 0.25);
-    ring(ball.position.x, ball.position.y, '#d9b83a', 6, 2.8);
+    burst(ball.position.x, ball.position.y, '#e0b840', 4 + Math.min(8, speed | 0), 2 + speed * 0.25);
+    ring(ball.position.x, ball.position.y, '#e0b840', 6, 2.8);
   }
 });
 
@@ -429,8 +430,8 @@ function updateBallEffects(b, dt, now) {
     if (s.r > s.radius + CELL * 0.8) {
       // выплёвываем: октава вверх, тангенциальный вылет
       play(synths.spin, b.plugin.noteIdx + 5, 0.55, 0.25);
-      burst(b.position.x, b.position.y, '#5cc4e8', 10, 3.5);
-      ring(b.position.x, b.position.y, '#5cc4e8', 8, 3.2);
+      burst(b.position.x, b.position.y, '#5fb8e0', 10, 3.5);
+      ring(b.position.x, b.position.y, '#5fb8e0', 8, 3.2);
       shake(1.5);
       b.plugin.spin = null;
       b.plugin.noSpinUntil = now + 800;
@@ -455,7 +456,7 @@ function updateBallEffects(b, dt, now) {
     if (zone === JELLY) {
       b.frictionAir = 0.09;
       Body.setVelocity(b, { x: b.velocity.x * 0.25, y: b.velocity.y * 0.25 });
-      ring(b.position.x, b.position.y, '#b285e0', 10, 1.4);
+      ring(b.position.x, b.position.y, '#b98fe0', 10, 1.4);
       attackJelly(b);
     }
     if (zone === ARP) {
@@ -495,8 +496,8 @@ function updateBallEffects(b, dt, now) {
         );
         if (clone) clone.plugin.splitCool = now + 500;
       }
-      burst(b.position.x, b.position.y, '#f28cb0', 14, 4);
-      ring(b.position.x, b.position.y, '#f28cb0', 7, 3);
+      burst(b.position.x, b.position.y, '#e97f8a', 14, 4);
+      ring(b.position.x, b.position.y, '#e97f8a', 7, 3);
       shake(2.5);
       play(synths.split, b.plugin.noteIdx, 0.7, 0.15);
     }
@@ -566,27 +567,17 @@ function seedDemo() {
 
 // ---------- state / UI ----------
 let running = true;
-let bpm = 120;
+const bpm = 120; // слайдер темпа пока закомментирован
 let tool = 'paint'; // paint | erase  (перетаскивание пока закомментировано)
-let paintColor = JELLY;
-
-const tempoInput = document.getElementById('tempo');
-const bpmLabel = document.getElementById('bpmLabel');
-tempoInput.addEventListener('input', () => {
-  bpm = Number(tempoInput.value);
-  bpmLabel.textContent = bpm;
-});
+let paintColor = SPIN; // по умолчанию активен синий (как в макете)
 
 const playBtn = document.getElementById('playBtn');
+const icPlay = playBtn.querySelector('.ic-play');
+const icPause = playBtn.querySelector('.ic-pause');
 playBtn.addEventListener('click', () => {
   running = !running;
-  playBtn.textContent = running ? '⏸' : '▶';
-});
-
-document.getElementById('clearBtn').addEventListener('click', () => {
-  grid.fill(0);
-  rebuildSolidBodies();
-  gridDirty = true;
+  icPause.style.display = running ? 'block' : 'none';
+  icPlay.style.display = running ? 'none' : 'block';
 });
 
 const eraserBtn = document.getElementById('eraserBtn');

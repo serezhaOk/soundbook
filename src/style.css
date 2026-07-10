@@ -121,72 +121,17 @@ html, body {
 
 #startBtn:active { transform: scale(0.97); }
 
-/* ---------- нижняя панель ---------- */
+/* ---------- нижняя панель (пиксель-перфект по макету 390px) ---------- */
 
 #ui {
   position: fixed;
   z-index: 20; /* контролы поверх гобо-тени */
-  left: 8px;
-  right: 8px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: center;
-}
-
-.tempo-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: min(100%, 420px);
-  padding: 6px 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 4px 16px rgba(38, 34, 43, 0.08);
-}
-
-#tempo {
-  flex: 1;
-  min-width: 0;
-  accent-color: #26222b;
-}
-
-.mono {
-  font-variant-numeric: tabular-nums;
-  font-size: 13px;
-  color: #948e85;
-  width: 3ch;
-  text-align: right;
-  flex-shrink: 0;
-}
-
-.main-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: min(100%, 420px);
-  justify-content: space-between;
-}
-
-.pill {
-  flex: 1;
-  display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 8px 10px;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 8px 24px rgba(38, 34, 43, 0.12);
-}
-
-.palette {
-  display: flex;
-  gap: 8px;
-  min-width: 0;
 }
 
 button {
@@ -197,72 +142,95 @@ button {
   padding: 0;
 }
 
+/* ластик — 28×86, три слоя с цилиндрическими градиентами из макета */
+.eraser {
+  position: relative;
+  width: 28px;
+  height: 86px;
+  margin-right: 19px;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.eraser span {
+  position: absolute;
+  box-shadow: inset 0 -1px 1px rgba(0, 0, 0, 0.09), inset 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.er-tip {
+  left: 1px; top: 0; width: 26px; height: 29px; border-radius: 5px;
+  background: linear-gradient(270deg, #d88180 12.48%, #f69e9d 24.49%, #d7807f 82.51%, #df8785 100%);
+}
+
+.er-body {
+  left: 1px; top: 42px; width: 26px; height: 50px; border-radius: 1px;
+  background: linear-gradient(270deg, #272727 12.48%, #3c3c3c 24.49%, #272727 82.51%, #161616 100%);
+}
+
+.er-collar {
+  left: 0; top: 24px; width: 28px; height: 25px; border-radius: 1px;
+  background: linear-gradient(270deg, #272727 12.48%, #3c3c3c 24.49%, #272727 82.51%, #161616 100%);
+}
+
+.eraser.active { transform: translateY(-8px); }
+
+/* пилюля с 5 свотчами: 248×72, свотчи 32px, шаг 48 */
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 12px;
+  margin-bottom: 12px;
+  border-radius: 100px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(38, 34, 43, 0.12), 0 2px 5px rgba(38, 34, 43, 0.06);
+}
+
 .swatch {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--c);
-  flex-shrink: 1;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.swatch.active {
-  transform: scale(1.12);
-  box-shadow: 0 0 0 2.5px #fff, 0 0 0 4.5px #26222b;
-}
-
-#clearBtn {
+  position: relative;
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  color: #b6afa5;
-  font-size: 15px;
+  background: var(--c);
+  box-shadow: inset 0 -1.5px 2px rgba(0, 0, 0, 0.08), inset 0 1px 1.5px rgba(255, 255, 255, 0.5);
+  transition: transform 0.15s ease;
   flex-shrink: 0;
 }
 
-/* ластик — розовый кончик + тёмный корпус, как карандашная резинка */
-.eraser {
-  width: 44px;
-  height: 52px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 6px 18px rgba(38, 34, 43, 0.18);
-  flex-shrink: 0;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+/* активный свотч: белая точка в центре + мягкое цветное свечение */
+.swatch.active {
+  box-shadow: inset 0 -1.5px 2px rgba(0, 0, 0, 0.08), 0 0 10px 1px var(--c);
 }
 
-.eraser-tip {
-  width: 100%;
-  height: 40%;
-  background: #ef9a9a;
-}
-
-.eraser-body {
-  width: 100%;
-  height: 60%;
-  background: #26222b;
-}
-
-.eraser.active {
-  transform: translateY(-6px) scale(1.06);
-  box-shadow: 0 0 0 2.5px #f6f2ea, 0 0 0 4.5px #26222b, 0 10px 22px rgba(38, 34, 43, 0.25);
-}
-
-.play {
-  width: 52px;
-  height: 52px;
+.swatch.active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
-  background: #26222b;
-  color: #f6f2ea;
-  font-size: 18px;
-  flex-shrink: 0;
-  box-shadow: 0 8px 24px rgba(38, 34, 43, 0.25);
+  background: #fff;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.15);
+}
+
+.swatch:active { transform: scale(0.92); }
+
+/* кнопка play/pause — 48px круг #3b3b3b с внутренней тенью из макета */
+.play {
+  width: 48px;
+  height: 48px;
+  margin-left: 11px;
+  margin-bottom: 20px;
+  border-radius: 100px;
+  background: #3b3b3b;
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.85), inset 0 3px 3px rgba(255, 255, 255, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.12s ease;
 }
 
 .play:active { transform: scale(0.95); }
+.play svg { display: block; }
