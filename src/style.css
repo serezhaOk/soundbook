@@ -41,16 +41,16 @@ html, body {
   content: '';
   position: absolute;
   inset: 0;
-  /* картинка растянута ровно по вьюпорту — полосы 1:1 */
-  background: url('./blinds.jpg') center / 100% 100% no-repeat;
+  background: url('./blinds.jpg') center / cover no-repeat;
+  transform-origin: center; /* от центра экрана */
   will-change: transform;
   animation: gobo-drift 90s ease-in-out infinite alternate;
 }
 
-/* медленный вертикальный дрейф (внутри лёгкого зума, чтобы не оголять края) */
+/* повёрнуто на 30°, увеличено от центра на 300% + лёгкий медленный дрейф */
 @keyframes gobo-drift {
-  from { transform: translateY(-2%) scale(1.06); }
-  to   { transform: translateY(2%) scale(1.06); }
+  from { transform: rotate(30deg) scale(3) translateY(-0.6%); }
+  to   { transform: rotate(30deg) scale(3) translateY(0.6%); }
 }
 
 /* ---------- стартовый экран ---------- */
