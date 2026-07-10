@@ -4,7 +4,7 @@ import * as Tone from 'tone';
 const { Engine, Composite, Bodies, Body, Events } = Matter;
 
 // ---------- сетка ----------
-const CELL = 16;
+const CELL = 20;
 let W = 0, H = 0, COLS = 0, ROWS = 0;
 let grid = new Uint8Array(0); // 0 пусто, иначе id цвета
 
