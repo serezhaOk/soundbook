@@ -25,12 +25,71 @@ html, body {
   touch-action: none;
 }
 
+/* ---------- гобо свет-тень ---------- */
+
+#gobo,
+#gobo-light {
+  position: fixed;
+  inset: -25%;
+  z-index: 5;
+  pointer-events: none;
+}
+
+#gobo { mix-blend-mode: multiply; }
+#gobo-light { mix-blend-mode: screen; }
+
+#gobo::before,
+#gobo::after,
+#gobo-light::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+
+#gobo::before {
+  background:
+    radial-gradient(48% 36% at 22% 14%, rgba(62, 58, 74, 0.14), transparent 72%),
+    radial-gradient(56% 44% at 86% 58%, rgba(62, 58, 74, 0.11), transparent 72%),
+    radial-gradient(42% 52% at 42% 96%, rgba(62, 58, 74, 0.09), transparent 72%);
+  animation: gobo-a 95s ease-in-out infinite alternate;
+}
+
+#gobo::after {
+  background:
+    radial-gradient(52% 40% at 72% 18%, rgba(62, 58, 74, 0.1), transparent 72%),
+    radial-gradient(62% 50% at 12% 68%, rgba(62, 58, 74, 0.12), transparent 72%);
+  animation: gobo-b 140s ease-in-out infinite alternate;
+}
+
+#gobo-light::before {
+  background:
+    radial-gradient(40% 32% at 55% 35%, rgba(255, 255, 255, 0.5), transparent 70%),
+    radial-gradient(30% 26% at 20% 80%, rgba(255, 255, 255, 0.3), transparent 70%);
+  animation: gobo-c 110s ease-in-out infinite alternate;
+}
+
+@keyframes gobo-a {
+  from { transform: translate(-4%, -3%) rotate(-2deg) scale(1.06); }
+  to   { transform: translate(4%, 3%) rotate(2deg) scale(1.14); }
+}
+
+@keyframes gobo-b {
+  from { transform: translate(3%, -4%) rotate(1.5deg) scale(1.1); }
+  to   { transform: translate(-3%, 4%) rotate(-1.5deg) scale(1.02); }
+}
+
+@keyframes gobo-c {
+  from { transform: translate(-3%, 4%) rotate(1deg) scale(1.04); }
+  to   { transform: translate(3%, -3%) rotate(-1.5deg) scale(1.12); }
+}
+
 /* ---------- стартовый экран ---------- */
 
 #start-screen {
   position: fixed;
   inset: 0;
-  z-index: 10;
+  z-index: 30;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -97,6 +156,7 @@ html, body {
 
 #ui {
   position: fixed;
+  z-index: 20; /* контролы поверх гобо-тени */
   left: 8px;
   right: 8px;
   bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);

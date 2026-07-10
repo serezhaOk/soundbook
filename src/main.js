@@ -675,7 +675,7 @@ function redrawGrid() {
       if (!c) {
         gctx.fillStyle = '#ded4c4';
         gctx.beginPath();
-        gctx.arc(x + CELL / 2, y + CELL / 2, 1.6, 0, Math.PI * 2);
+        gctx.arc(x + CELL / 2, y + CELL / 2, 1.5, 0, Math.PI * 2); // точка 3×3
         gctx.fill();
         continue;
       }
@@ -691,7 +691,7 @@ function redrawGrid() {
       gctx.fill();
       gctx.fillStyle = 'rgba(255,255,255,0.85)';
       gctx.beginPath();
-      gctx.arc(x + CELL / 2, y + CELL / 2, 1.8, 0, Math.PI * 2);
+      gctx.arc(x + CELL / 2, y + CELL / 2, 1.5, 0, Math.PI * 2); // точка 3×3
       gctx.fill();
     }
   }
