@@ -170,7 +170,7 @@ function play(synth, noteIdx, velocity, dur = 0.2) {
 }
 
 // ---------- физика ----------
-const engine = Engine.create({ gravity: { x: 0, y: 1 } });
+const engine = Engine.create({ gravity: { x: 0, y: 0.55 } });
 const world = engine.world;
 
 const BALL_R = 7;
