@@ -26,19 +26,21 @@ const gridCanvas = document.createElement('canvas');
 const gctx = gridCanvas.getContext('2d');
 let gridDirty = true;
 
+let DPR = 1;
 function resize() {
-  // полный DPR (на iPhone это 3): кап на 2 давал мыльную картинку
-  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  // полный DPR (на iPhone это 3): кап давал мыльную картинку
+  DPR = Math.min(window.devicePixelRatio || 1, 3);
   W = window.innerWidth;
   H = window.innerHeight;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
+  canvas.width = Math.round(W * DPR);
+  canvas.height = Math.round(H * DPR);
   canvas.style.width = W + 'px';
   canvas.style.height = H + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  gridCanvas.width = W * dpr;
-  gridCanvas.height = H * dpr;
-  gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  gridCanvas.width = canvas.width;
+  gridCanvas.height = canvas.height;
+  gctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
   const cols = Math.ceil(W / CELL);
   const rows = Math.ceil(H / CELL);
@@ -335,9 +337,10 @@ function updateBallEffects(b, dt, now) {
   if (b.plugin.spin) {
     const s = b.plugin.spin;
     s.t += dt;
-    s.omega = 0.004 + s.t * 0.0000045;
+    // вдвое спокойнее: медленнее вращение и мягче раскрутка наружу
+    s.omega = 0.0021 + s.t * 0.0000018;
     s.ang += s.omega * dt;
-    s.r += dt * 0.012 * (1 + s.t / 700);
+    s.r += dt * 0.006 * (1 + s.t / 1100);
     const px = s.mx + Math.cos(s.ang) * s.r;
     const py = s.my + Math.sin(s.ang) * s.r;
     Body.setPosition(b, { x: px, y: py });
@@ -346,12 +349,12 @@ function updateBallEffects(b, dt, now) {
 
     if (now >= s.nextTrig) {
       s.step++;
-      play(synths.spin, b.plugin.noteIdx + s.step, 0.35, 0.12);
-      s.nextTrig = now + Math.max(90, 260 - s.t / 12);
+      play(synths.spin, b.plugin.noteIdx + s.step, 0.32, 0.12);
+      s.nextTrig = now + Math.max(150, 340 - s.t / 16);
     }
     if (s.r > s.radius + CELL * 0.8) {
       // выплёвываем: октава вверх, тангенциальный вылет
-      play(synths.spin, b.plugin.noteIdx + 5, 0.6, 0.25);
+      play(synths.spin, b.plugin.noteIdx + 5, 0.55, 0.25);
       b.plugin.spin = null;
       b.plugin.noSpinUntil = now + 800;
     }
@@ -632,12 +635,13 @@ function drawEmitter(t) {
 function drawBall(b) {
   const { x, y } = b.position;
   ctx.save();
-  ctx.fillStyle = `hsl(${b.plugin.hue} 70% 55%)`;
 
   // в зелёном поле: пульс размера + морф круг -> квадрат -> треугольник
   const a = b.plugin.zone === ARP ? b.plugin.arp : null;
-  const r = BALL_R * (a ? 1 + a.pulse * 0.4 : 1);
+  const r = BALL_R * (a ? 1 + a.pulse * 0.45 : 1);
   const shape = a ? a.step % 3 : 0;
+  // на пике пульса мигаем белым (кислотный строб), с цветной обводкой
+  const flashing = a && a.pulse > 0.55;
 
   ctx.beginPath();
   if (shape === 1) {
@@ -652,7 +656,13 @@ function drawBall(b) {
   } else {
     ctx.arc(x, y, r, 0, Math.PI * 2);
   }
+  ctx.fillStyle = flashing ? '#ffffff' : `hsl(${b.plugin.hue} 70% 55%)`;
   ctx.fill();
+  if (flashing) {
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = `hsl(${b.plugin.hue} 90% 58%)`;
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -695,8 +705,11 @@ function frame(now) {
   }
 
   if (gridDirty) redrawGrid();
-  ctx.clearRect(0, 0, W, H);
-  ctx.drawImage(gridCanvas, 0, 0, W, H);
+  // кэш сетки блитаем 1:1 в device-пикселях (без масштаба и сглаживания) — резко
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(gridCanvas, 0, 0);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   drawFlashes();
   drawEmitter(now);
   balls.forEach(drawBall);
