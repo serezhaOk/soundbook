@@ -182,6 +182,69 @@ const solidBodies = new Map(); // idx ячейки -> статическое т�
 const lastHit = new Map();
 const cellFlash = new Map(); // idx -> 0..1
 
+// ---------- аркадный джус: партиклы и тряска ----------
+const particles = [];
+const MAX_PARTICLES = 350;
+
+function burst(x, y, color, n = 10, speed = 3) {
+  for (let i = 0; i < n && particles.length < MAX_PARTICLES; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = speed * (0.4 + Math.random() * 0.9);
+    particles.push({
+      kind: 'dot', x, y,
+      vx: Math.cos(a) * s, vy: Math.sin(a) * s - speed * 0.35,
+      size: 1.5 + Math.random() * 2.5,
+      color, life: 1, decay: 0.02 + Math.random() * 0.025, g: 0.14,
+    });
+  }
+}
+
+function ring(x, y, color, size = 8, vsize = 2.4) {
+  if (particles.length < MAX_PARTICLES)
+    particles.push({ kind: 'ring', x, y, size, vsize, color, life: 1, decay: 0.055 });
+}
+
+let shakeMag = 0;
+function shake(m) { shakeMag = Math.min(12, shakeMag + m); }
+
+function updateParticles(dt) {
+  const k = dt / 16.7;
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= p.decay * k;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    if (p.kind === 'dot') {
+      p.x += p.vx * k;
+      p.y += p.vy * k;
+      p.vy += p.g * k;
+      p.vx *= 0.985;
+    } else {
+      p.size += p.vsize * k;
+    }
+  }
+  shakeMag *= Math.pow(0.86, k);
+  if (shakeMag < 0.05) shakeMag = 0;
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, Math.min(1, p.life));
+    if (p.kind === 'dot') {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 0.5 + 2 * p.life;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
 let noteIndex = 0;
 const emitter = { x: 0, y: 0 };
 function placeEmitter() {
@@ -232,6 +295,7 @@ function setCell(cx, cy, color) {
   if (grid[idx] === BOUNCE) removeSolidBody(idx);
   grid[idx] = color;
   if (color === BOUNCE) addSolidBody(idx);
+  cellFlash.set(idx, 0.5); // короткий поп при покраске/стирании
   gridDirty = true;
 }
 
@@ -253,9 +317,14 @@ function spawnBall(noteIdx = noteIndex++, x = emitter.x, y = emitter.y, vel = nu
   b.plugin.arp = null;
   b.plugin.splitCool = 0;
   b.plugin.noSpinUntil = 0;
+  b.plugin.born = performance.now();
+  b.plugin.squash = 0;
+  b.plugin.trail = [];
   if (vel) Body.setVelocity(b, vel);
   Composite.add(world, b);
   balls.push(b);
+  ring(x, y, `hsl(${b.plugin.hue} 70% 55%)`, 5, 1.8);
+  emitterPulse = 1;
   return b;
 }
 
@@ -285,6 +354,11 @@ Events.on(engine, 'collisionStart', (e) => {
 
     play(synths.bounce, ball.plugin.noteIdx, Math.min(1, 0.3 + speed / 14));
     cellFlash.set(cell.plugin.idx, 1);
+    // джус: тряска, сквош, брызги и ударная волна
+    shake(Math.min(6, speed * 0.4));
+    ball.plugin.squash = 1;
+    burst(ball.position.x, ball.position.y, '#eccb54', 4 + Math.min(8, speed | 0), 2 + speed * 0.25);
+    ring(ball.position.x, ball.position.y, '#d9b83a', 6, 2.8);
   }
 });
 
@@ -355,6 +429,9 @@ function updateBallEffects(b, dt, now) {
     if (s.r > s.radius + CELL * 0.8) {
       // выплёвываем: октава вверх, тангенциальный вылет
       play(synths.spin, b.plugin.noteIdx + 5, 0.55, 0.25);
+      burst(b.position.x, b.position.y, '#5cc4e8', 10, 3.5);
+      ring(b.position.x, b.position.y, '#5cc4e8', 8, 3.2);
+      shake(1.5);
       b.plugin.spin = null;
       b.plugin.noSpinUntil = now + 800;
     }
@@ -378,6 +455,7 @@ function updateBallEffects(b, dt, now) {
     if (zone === JELLY) {
       b.frictionAir = 0.09;
       Body.setVelocity(b, { x: b.velocity.x * 0.25, y: b.velocity.y * 0.25 });
+      ring(b.position.x, b.position.y, '#b285e0', 10, 1.4);
       attackJelly(b);
     }
     if (zone === ARP) {
@@ -417,6 +495,9 @@ function updateBallEffects(b, dt, now) {
         );
         if (clone) clone.plugin.splitCool = now + 500;
       }
+      burst(b.position.x, b.position.y, '#f28cb0', 14, 4);
+      ring(b.position.x, b.position.y, '#f28cb0', 7, 3);
+      shake(2.5);
       play(synths.split, b.plugin.noteIdx, 0.7, 0.15);
     }
     b.plugin.zone = zone;
@@ -617,51 +698,98 @@ function redrawGrid() {
   gridDirty = false;
 }
 
+let emitterPulse = 0;
+
 function drawEmitter(t) {
-  const pulse = 1 + 0.1 * Math.sin(t / 250);
+  emitterPulse = Math.max(0, emitterPulse - 0.05);
+  const pulse = 1 + 0.08 * Math.sin(t / 250) + emitterPulse * 0.45;
   ctx.save();
   ctx.strokeStyle = '#26222b';
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2 + emitterPulse * 1.5;
   ctx.beginPath();
   ctx.arc(emitter.x, emitter.y, 11 * pulse, 0, Math.PI * 2);
   ctx.stroke();
   ctx.fillStyle = '#26222b';
   ctx.beginPath();
-  ctx.arc(emitter.x, emitter.y, 3.5, 0, Math.PI * 2);
+  ctx.arc(emitter.x, emitter.y, 3.5 * (1 + emitterPulse * 0.6), 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
 
-function drawBall(b) {
+function drawTrails() {
+  for (const b of balls) {
+    const tr = b.plugin.trail;
+    for (let i = 0; i < tr.length; i++) {
+      const p = tr[i];
+      const f = (i + 1) / tr.length;
+      ctx.globalAlpha = f * 0.22;
+      ctx.fillStyle = `hsl(${b.plugin.hue} 70% 55%)`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, BALL_R * f * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// easeOutBack — поп с перелётом при рождении шарика
+function popScale(t) {
+  if (t >= 1) return 1;
+  const c1 = 1.70158, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
+
+function drawBall(b, now) {
   const { x, y } = b.position;
+  const hue = b.plugin.hue;
   ctx.save();
+  ctx.translate(x, y);
+
+  // поп при рождении
+  const born = Math.min(1, (now - b.plugin.born) / 220);
+  let r = BALL_R * Math.max(0.05, popScale(born));
 
   // в зелёном поле: пульс размера + морф круг -> квадрат -> треугольник
   const a = b.plugin.zone === ARP ? b.plugin.arp : null;
-  const r = BALL_R * (a ? 1 + a.pulse * 0.45 : 1);
   const shape = a ? a.step % 3 : 0;
-  // на пике пульса мигаем белым (кислотный строб), с цветной обводкой
-  const flashing = a && a.pulse > 0.55;
+  const flashing = a && a.pulse > 0.55; // кислотный белый строб на пике
+  if (a) r *= 1 + a.pulse * 0.45;
+
+  if (!a) {
+    // сквош-стретч по направлению скорости — аркадное ощущение веса
+    const sp = Math.hypot(b.velocity.x, b.velocity.y);
+    const stretch = (1 + Math.min(0.35, sp * 0.014)) * (1 - 0.42 * b.plugin.squash);
+    ctx.rotate(Math.atan2(b.velocity.y, b.velocity.x));
+    ctx.scale(stretch, 1 / stretch);
+  } else {
+    ctx.rotate(Math.sin(now * 0.004 + b.id) * 0.35); // формы слегка покачиваются
+  }
 
   ctx.beginPath();
   if (shape === 1) {
     const s = r * 1.7;
-    ctx.rect(x - s / 2, y - s / 2, s, s);
+    ctx.rect(-s / 2, -s / 2, s, s);
   } else if (shape === 2) {
     const rr = r * 1.35;
-    ctx.moveTo(x, y - rr);
-    ctx.lineTo(x + rr * 0.866, y + rr * 0.5);
-    ctx.lineTo(x - rr * 0.866, y + rr * 0.5);
+    ctx.moveTo(0, -rr);
+    ctx.lineTo(rr * 0.866, rr * 0.5);
+    ctx.lineTo(-rr * 0.866, rr * 0.5);
     ctx.closePath();
   } else {
-    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
   }
-  ctx.fillStyle = flashing ? '#ffffff' : `hsl(${b.plugin.hue} 70% 55%)`;
+  ctx.fillStyle = flashing ? '#ffffff' : `hsl(${hue} 70% 55%)`;
   ctx.fill();
-  if (flashing) {
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = `hsl(${b.plugin.hue} 90% 58%)`;
-    ctx.stroke();
+  // «стикерная» обводка + блик
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = flashing ? `hsl(${hue} 90% 58%)` : `hsl(${hue} 55% 42%)`;
+  ctx.stroke();
+  if (!flashing) {
+    ctx.globalAlpha = 0.65;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(-r * 0.3, -r * 0.35, r * 0.24, 0, Math.PI * 2);
+    ctx.fill();
   }
   ctx.restore();
 }
@@ -695,9 +823,16 @@ function frame(now) {
     }
   }
 
-  for (const b of balls) updateBallEffects(b, dt, now);
+  for (const b of balls) {
+    updateBallEffects(b, dt, now);
+    b.plugin.squash = Math.max(0, b.plugin.squash - dt * 0.007);
+    const tr = b.plugin.trail;
+    tr.push({ x: b.position.x, y: b.position.y });
+    if (tr.length > 6) tr.shift();
+  }
 
   Engine.update(engine, dt);
+  updateParticles(dt);
 
   for (let i = balls.length - 1; i >= 0; i--) {
     const b = balls[i];
@@ -705,14 +840,20 @@ function frame(now) {
   }
 
   if (gridDirty) redrawGrid();
+  // тряска экрана: общий сдвиг и для блита сетки, и для мира
+  const shx = (Math.random() * 2 - 1) * shakeMag;
+  const shy = (Math.random() * 2 - 1) * shakeMag;
   // кэш сетки блитаем 1:1 в device-пикселях (без масштаба и сглаживания) — резко
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(gridCanvas, 0, 0);
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.drawImage(gridCanvas, Math.round(shx * DPR), Math.round(shy * DPR));
+  ctx.setTransform(DPR, 0, 0, DPR, shx * DPR, shy * DPR);
   drawFlashes();
+  drawTrails();
+  drawParticles();
   drawEmitter(now);
-  balls.forEach(drawBall);
+  balls.forEach((b) => drawBall(b, now));
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
   requestAnimationFrame(frame);
 }
