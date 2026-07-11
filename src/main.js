@@ -171,12 +171,12 @@ function play(synth, noteIdx, velocity, dur = 0.2) {
 }
 
 // ---------- физика ----------
-const engine = Engine.create({ gravity: { x: 0, y: 0.55 } });
+const engine = Engine.create({ gravity: { x: 0, y: 0.32 } });
 const world = engine.world;
 
 const BALL_R = 7;
 const MAX_BALLS = 70;
-const BASE_FRICTION_AIR = 0.0012;
+const BASE_FRICTION_AIR = 0.004; // выше сопротивление -> ниже предельная скорость
 
 const balls = [];
 const solidBodies = new Map(); // idx ячейки -> статическое тело (жёлтые)
@@ -310,7 +310,8 @@ function spawnBall(noteIdx = noteIndex++, x = emitter.x, y = emitter.y, vel = nu
     label: 'ball',
   });
   b.plugin.noteIdx = noteIdx;
-  b.plugin.hue = (noteIdx * 36) % 360;
+  // градации чёрного: самый тёмный #3B3B3B (L 23%), дальше осветляются к серому
+  b.plugin.grayL = 23 + ((noteIdx * 17) % 6) * 10; // 23..73%
   b.plugin.zone = 0;
   b.plugin.gen = gen;
   b.plugin.spin = null;
@@ -324,7 +325,7 @@ function spawnBall(noteIdx = noteIndex++, x = emitter.x, y = emitter.y, vel = nu
   if (vel) Body.setVelocity(b, vel);
   Composite.add(world, b);
   balls.push(b);
-  ring(x, y, `hsl(${b.plugin.hue} 70% 55%)`, 5, 1.8);
+  ring(x, y, `hsl(0 0% ${b.plugin.grayL}%)`, 5, 1.8);
   emitterPulse = 1;
   return b;
 }
@@ -714,7 +715,7 @@ function drawTrails() {
       const p = tr[i];
       const f = (i + 1) / tr.length;
       ctx.globalAlpha = f * 0.16;
-      ctx.fillStyle = `hsl(${b.plugin.hue} 70% 55%)`;
+      ctx.fillStyle = `hsl(0 0% ${b.plugin.grayL}%)`;
       ctx.beginPath();
       ctx.arc(p.x, p.y, BALL_R * f * 0.8, 0, Math.PI * 2);
       ctx.fill();
@@ -732,7 +733,7 @@ function popScale(t) {
 
 function drawBall(b, now) {
   const { x, y } = b.position;
-  const hue = b.plugin.hue;
+  const grayL = b.plugin.grayL;
   ctx.save();
   ctx.translate(x, y);
 
@@ -769,7 +770,7 @@ function drawBall(b, now) {
   } else {
     ctx.arc(0, 0, r, 0, Math.PI * 2);
   }
-  ctx.fillStyle = flashing ? '#ffffff' : `hsl(${hue} 70% 55%)`;
+  ctx.fillStyle = flashing ? '#ffffff' : `hsl(0 0% ${grayL}%)`;
   ctx.fill();
   ctx.restore();
 }

@@ -33,7 +33,7 @@ html, body {
   z-index: 5;
   pointer-events: none;
   mix-blend-mode: multiply; /* только затемняет — «plus darker» */
-  opacity: 0.6; /* мягче: тени деликатные, не чёрные */
+  opacity: 0.5; /* мягче: тени деликатные, не чёрные */
   overflow: hidden;
 }
 
@@ -44,13 +44,13 @@ html, body {
   background: url('./blinds.jpg') center / cover no-repeat;
   transform-origin: center; /* от центра экрана */
   will-change: transform;
-  animation: gobo-drift 90s ease-in-out infinite alternate;
+  animation: gobo-drift 4s ease-in-out infinite alternate;
 }
 
-/* повёрнуто на 30°, увеличено от центра на 300% + лёгкий медленный дрейф */
+/* повёрнуто на 30°, увеличено от центра на 300%; 4с туда / 4с обратно */
 @keyframes gobo-drift {
-  from { transform: rotate(30deg) scale(3) translateY(-0.6%); }
-  to   { transform: rotate(30deg) scale(3) translateY(0.6%); }
+  from { transform: rotate(30deg) scale(3) translateY(-0.9%); }
+  to   { transform: rotate(30deg) scale(3) translateY(0.9%); }
 }
 
 /* ---------- стартовый экран ---------- */
@@ -182,10 +182,11 @@ button {
   gap: 16px;
   height: 72px;
   padding: 0 12px;
-  margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
   border-radius: 26px;
   background: #fff;
-  box-shadow: 0 8px 20px rgba(38, 34, 43, 0.12), 0 2px 5px rgba(38, 34, 43, 0.06);
+  box-shadow: 0 8px 20px rgba(38, 34, 43, 0.12), 0 2px 5px rgba(38, 34, 43, 0.06),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.25);
 }
 
 /* внутренняя тень тёмная сверху (светлую снизу убрали) */
@@ -221,6 +222,7 @@ button {
   height: 48px;
   margin-left: 11px;
   margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+  align-self: flex-end;
   border-radius: 100px;
   background: #3b3b3b;
   box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.85), inset 0 3px 3px rgba(255, 255, 255, 0.25);
