@@ -63,45 +63,98 @@ function safeTop() {
   return parseFloat(v) || 0;
 }
 
-// ---------- audio ----------
-const master = new Tone.Limiter(-2).toDestination();
+// ---------- audio: сэмплерный движок v2 ----------
+const BPM = 120;
 
-// жёлтый: щипок с огромным реверб-хвостом
-const reverb = new Tone.Reverb({ decay: 7, preDelay: 0.02, wet: 0.55 }).connect(master);
-// синий: feedback delay для центрифуги
-const delayBus = new Tone.FeedbackDelay(0.28, 0.55).connect(master);
-// зелёный: пинг-понг для зиппер-арпеджио
-const arpBus = new Tone.PingPongDelay(0.13, 0.35).connect(master);
-arpBus.wet.value = 0.4;
-// розовый: хрустящий сплит
-const distBus = new Tone.Filter(2400, 'lowpass').connect(master);
-const dist = new Tone.Distortion(0.7).connect(distBus);
-// фиолетовый: тёплый пад — фильтр -> хорус -> мягкий реверб
-const jellyVerb = new Tone.Reverb({ decay: 5, preDelay: 0.03, wet: 0.4 }).connect(master);
+// мастер-шина: EQ -> глю-компрессор -> лимитер
+const limiter = new Tone.Limiter(-1).toDestination();
+const glue = new Tone.Compressor({ threshold: -18, ratio: 3, attack: 0.01, release: 0.18 }).connect(limiter);
+const master = new Tone.EQ3({ low: -1, mid: 0, high: 1.5 }).connect(glue);
+
+// общий реверб-send + shimmer (октава вверх внутрь реверба — «поющий» хвост)
+const reverb = new Tone.Reverb({ decay: 6.5, preDelay: 0.02, wet: 1 }).connect(master);
+const shimmer = new Tone.PitchShift({ pitch: 12, windowSize: 0.08, wet: 1 }).connect(reverb);
+
+// duck-шина: пад и дрон приседают под ударами батута (сайдчейн)
+const duck = new Tone.Gain(1).connect(master);
+
+function duckHit(depth = 0.35) {
+  const g = duck.gain;
+  const t = Tone.now();
+  g.cancelScheduledValues(t);
+  g.setValueAtTime(g.value, t);
+  g.linearRampToValueAtTime(depth, t + 0.045);
+  g.linearRampToValueAtTime(1, t + 0.6);
+}
+
+// жёлтый (батут): сухой + жирные send'ы в реверб и shimmer
+const yellowDry = new Tone.Gain(0.75).connect(master);
+const yellowRev = new Tone.Gain(0.5).connect(reverb);
+const yellowShim = new Tone.Gain(0.33).connect(shimmer);
+
+// синий (центрифуга): delay, синхронный темпу (точечная 1/8)
+const blueDelay = new Tone.FeedbackDelay('8n.', 0.5).connect(master);
+blueDelay.wet.value = 0.42;
+const blueRev = new Tone.Gain(0.22).connect(reverb);
+
+// зелёный (арпеджиатор): свипующий БЭНДПАСС-фильтр в темпе + пинг-понг
+const greenPong = new Tone.PingPongDelay('16n', 0.32).connect(master);
+greenPong.wet.value = 0.35;
+const greenBP = new Tone.AutoFilter({
+  frequency: '2n',
+  baseFrequency: 260,
+  octaves: 3.4,
+  filter: { type: 'bandpass', rolloff: -24, Q: 2.4 },
+  wet: 1,
+}).connect(greenPong).start();
+
+// розовый (сплиттер): тёплый Chebyshev-кранч + суб-удар
+const pinkLP = new Tone.Filter(2400, 'lowpass').connect(master);
+const pinkCheby = new Tone.Chebyshev(3).connect(pinkLP);
+pinkCheby.wet.value = 0.6;
+const subKick = new Tone.MembraneSynth({
+  pitchDecay: 0.03,
+  octaves: 5,
+  envelope: { attack: 0.001, decay: 0.32, sustain: 0 },
+  volume: -13,
+}).connect(master);
+
+// фиолетовый пад: фильтр -> хорус -> реверб -> duck (дакается от батута)
+const jellyVerb = new Tone.Reverb({ decay: 5, preDelay: 0.03, wet: 0.4 }).connect(duck);
 const jellyChorus = new Tone.Chorus(0.4, 4.5, 0.3).connect(jellyVerb).start();
 const jellyFilter = new Tone.Filter(850, 'lowpass', -12).connect(jellyChorus);
 
-function makeSynth(dest, opts = {}) {
-  const s = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: 'triangle' },
-    envelope: { attack: 0.002, decay: 0.28, sustain: 0, release: 0.25 },
-    volume: -8,
-    ...opts,
-  });
-  s.connect(dest);
+// тихий рут-дрон для глубины, тоже под сайдчейном
+const droneGain = new Tone.Gain(0).connect(duck);
+const droneLP = new Tone.Filter(320, 'lowpass').connect(droneGain);
+const droneOsc = [
+  new Tone.Oscillator('C2', 'sine').connect(droneLP),
+  new Tone.Oscillator('G2', 'sine').connect(droneLP),
+];
+
+// сэмплер «музыкальная шкатулка» (рендер модальным синтезом, public/samples)
+const SAMPLE_URLS = {
+  C4: 'mbx-C4.wav', E4: 'mbx-E4.wav', A4: 'mbx-A4.wav',
+  C5: 'mbx-C5.wav', E5: 'mbx-E5.wav', A5: 'mbx-A5.wav', C6: 'mbx-C6.wav',
+};
+const SAMPLE_BASE = import.meta.env.BASE_URL + 'samples/';
+
+function mkSampler(volume, ...dests) {
+  const s = new Tone.Sampler({ urls: SAMPLE_URLS, baseUrl: SAMPLE_BASE, volume });
+  for (const d of dests) s.connect(d);
   return s;
 }
 
-const synths = {
-  bounce: makeSynth(reverb),
-  spin: makeSynth(delayBus, { volume: -10 }),
-  arp: makeSynth(arpBus, {
-    volume: -12,
-    envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.08 },
-  }),
-  split: makeSynth(dist, { oscillator: { type: 'square' }, volume: -16 }),
-  spawn: makeSynth(master, { volume: -20, oscillator: { type: 'sine' } }),
+const samplers = {
+  bounce: mkSampler(-3, yellowDry, yellowRev, yellowShim),
+  spin: mkSampler(-8, blueDelay, blueRev),
+  arp: mkSampler(-9, greenBP),
+  split: mkSampler(-9, pinkCheby),
+  spawn: mkSampler(-24, master),
 };
+
+// длительность звучания на цвет (сэмпл живёт до release)
+const NOTE_DUR = { bounce: 2.2, spin: 0.7, arp: 0.3, split: 0.6, spawn: 0.4 };
 
 // пул голосов для желе: пад живёт, пока шарик внутри.
 // fat-осцилляторы (расстроенный унисон) + медленная атака = мягкий хор
@@ -158,16 +211,34 @@ async function ensureAudio() {
   unlockIOSAudio();
   await Tone.start();
   await Tone.getContext().resume();
+  await Tone.loaded(); // ждём сэмплы (локальные, грузятся мгновенно)
+  // Transport с лёгким свингом — база для мягкой квантизации
+  Tone.Transport.bpm.value = BPM;
+  Tone.Transport.swing = 0.12;
+  Tone.Transport.swingSubdivision = '16n';
+  Tone.Transport.start();
+  droneOsc.forEach((o) => o.start());
+  droneGain.gain.rampTo(0.055, 3); // дрон вплывает медленно
   audioReady = true;
 }
 
 const SCALE = ['C4', 'D4', 'E4', 'G4', 'A4', 'C5', 'D5', 'E5', 'G5', 'A5'];
 
-function play(synth, noteIdx, velocity, dur = 0.2) {
+// мягкая квантизация: снапим к ближайшей 1/16 только если она ближе 75мс
+function qTime() {
+  const spb = 60 / BPM / 4;
+  const pos = Tone.Transport.seconds;
+  const d = Math.ceil(pos / spb + 1e-6) * spb - pos;
+  return Tone.now() + (d < 0.075 ? d : 0) + 0.002 + Math.random() * 0.004;
+}
+
+function play(kind, noteIdx, velocity, durOverride) {
   if (!audioReady) return;
+  const s = samplers[kind];
+  if (!s || !s.loaded) return;
   const note = SCALE[((noteIdx % SCALE.length) + SCALE.length) % SCALE.length];
-  const t = Tone.now() + Math.random() * 0.008;
-  synth.triggerAttackRelease(note, dur, t, velocity);
+  const vel = velocity * (0.9 + Math.random() * 0.2); // хуманизация
+  s.triggerAttackRelease(note, durOverride ?? NOTE_DUR[kind], qTime(), vel);
 }
 
 // ---------- физика ----------
@@ -354,7 +425,8 @@ Events.on(engine, 'collisionStart', (e) => {
     if (now - (lastHit.get(key) || 0) < 130) continue;
     lastHit.set(key, now);
 
-    play(synths.bounce, ball.plugin.noteIdx, Math.min(1, 0.3 + speed / 14));
+    play('bounce', ball.plugin.noteIdx, Math.min(1, 0.3 + speed / 14));
+    duckHit(); // пад и дрон приседают под ударом (сайдчейн)
     cellFlash.set(cell.plugin.idx, 1);
     // джус: тряска, сквош, брызги и ударная волна
     shake(Math.min(6, speed * 0.4));
@@ -425,12 +497,12 @@ function updateBallEffects(b, dt, now) {
 
     if (now >= s.nextTrig) {
       s.step++;
-      play(synths.spin, b.plugin.noteIdx + s.step, 0.32, 0.12);
+      play('spin', b.plugin.noteIdx + s.step, 0.32, 0.12);
       s.nextTrig = now + Math.max(150, 340 - s.t / 16);
     }
     if (s.r > s.radius + CELL * 0.8) {
       // выплёвываем: октава вверх, тангенциальный вылет
-      play(synths.spin, b.plugin.noteIdx + 5, 0.55, 0.25);
+      play('spin', b.plugin.noteIdx + 5, 0.55, 0.25);
       burst(b.position.x, b.position.y, '#5fb8e0', 10, 3.5);
       ring(b.position.x, b.position.y, '#5fb8e0', 8, 3.2);
       shake(1.5);
@@ -474,7 +546,7 @@ function updateBallEffects(b, dt, now) {
         r: Math.max(4, Math.hypot(b.position.x - mx, b.position.y - my) * 0.5),
         t: 0, omega: 0.004, step: 0, nextTrig: now,
       };
-      play(synths.spin, b.plugin.noteIdx, 0.5, 0.2);
+      play('spin', b.plugin.noteIdx, 0.5, 0.2);
     }
     if (zone === SPLIT && now >= b.plugin.splitCool) {
       b.plugin.splitCool = now + 500;
@@ -500,7 +572,12 @@ function updateBallEffects(b, dt, now) {
       burst(b.position.x, b.position.y, '#e97f8a', 14, 4);
       ring(b.position.x, b.position.y, '#e97f8a', 7, 3);
       shake(2.5);
-      play(synths.split, b.plugin.noteIdx, 0.7, 0.15);
+      play('split', b.plugin.noteIdx, 0.7);
+      // суб-удар октавой-двумя ниже — панч у деления
+      if (audioReady) {
+        const note = SCALE[b.plugin.noteIdx % SCALE.length];
+        subKick.triggerAttackRelease(Tone.Frequency(note).transpose(-24), '8n', qTime(), 0.6);
+      }
     }
     b.plugin.zone = zone;
   }
@@ -525,7 +602,7 @@ function updateBallEffects(b, dt, now) {
     const a = b.plugin.arp;
     a.pulse = Math.max(0, a.pulse - dt * 0.005);
     if (now >= a.next) {
-      play(synths.arp, b.plugin.noteIdx + a.step, 0.4, 0.08);
+      play('arp', b.plugin.noteIdx + a.step, 0.4, 0.08);
       a.step++;
       a.pulse = 1; // вспышка размера + смена формы в ритм
       a.next = now + 175;
@@ -809,7 +886,7 @@ function frame(now) {
     while (spawnAcc >= interval) {
       spawnAcc -= interval;
       const b = spawnBall();
-      if (b) play(synths.spawn, b.plugin.noteIdx, 0.2, 0.1);
+      if (b) play('spawn', b.plugin.noteIdx, 0.2, 0.1);
     }
   }
 
