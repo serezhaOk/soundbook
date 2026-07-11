@@ -128,7 +128,7 @@ html, body {
   z-index: 20; /* контролы поверх гобо-тени */
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  bottom: 0; /* якорь у нижнего края экрана */
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -148,6 +148,7 @@ button {
   width: 28px;
   height: 86px;
   margin-right: 19px;
+  margin-bottom: 0; /* прижат к самому низу экрана */
   flex-shrink: 0;
   transition: transform 0.15s ease;
 }
@@ -174,34 +175,32 @@ button {
 
 .eraser.active { transform: translateY(-8px); }
 
-/* пилюля с 5 свотчами: 248×72, свотчи 32px, шаг 48 */
+/* пилюля с 5 свотчами: высота 72, скругление 26, свотчи 32px, шаг 48 */
 .pill {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 20px 12px;
-  margin-bottom: 12px;
-  border-radius: 100px;
+  height: 72px;
+  padding: 0 12px;
+  margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  border-radius: 26px;
   background: #fff;
   box-shadow: 0 8px 20px rgba(38, 34, 43, 0.12), 0 2px 5px rgba(38, 34, 43, 0.06);
 }
 
+/* внутренняя тень тёмная сверху (светлую снизу убрали) */
 .swatch {
   position: relative;
   width: 32px;
   height: 32px;
   border-radius: 50%;
   background: var(--c);
-  box-shadow: inset 0 -1.5px 2px rgba(0, 0, 0, 0.08), inset 0 1px 1.5px rgba(255, 255, 255, 0.5);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.16);
   transition: transform 0.15s ease;
   flex-shrink: 0;
 }
 
-/* активный свотч: белая точка в центре + мягкое цветное свечение */
-.swatch.active {
-  box-shadow: inset 0 -1.5px 2px rgba(0, 0, 0, 0.08), 0 0 10px 1px var(--c);
-}
-
+/* активный свотч: только белая точка в центре, без свечения */
 .swatch.active::after {
   content: '';
   position: absolute;
@@ -221,7 +220,7 @@ button {
   width: 48px;
   height: 48px;
   margin-left: 11px;
-  margin-bottom: 20px;
+  margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
   border-radius: 100px;
   background: #3b3b3b;
   box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.85), inset 0 3px 3px rgba(255, 255, 255, 0.25);
