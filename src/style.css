@@ -33,7 +33,7 @@ html, body {
   z-index: 5;
   pointer-events: none;
   mix-blend-mode: multiply; /* только затемняет — «plus darker» */
-  opacity: 0.5; /* мягче: тени деликатные, не чёрные */
+  opacity: 0.4; /* мягче: тени деликатные, не чёрные */
   overflow: hidden;
 }
 
@@ -182,7 +182,7 @@ button {
   gap: 16px;
   height: 72px;
   padding: 0 12px;
-  margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 0px);
   border-radius: 26px;
   background: #fff;
   box-shadow: 0 8px 20px rgba(38, 34, 43, 0.12), 0 2px 5px rgba(38, 34, 43, 0.06),
@@ -221,7 +221,7 @@ button {
   width: 48px;
   height: 48px;
   margin-left: 11px;
-  margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+  margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
   align-self: flex-end;
   border-radius: 100px;
   background: #3b3b3b;

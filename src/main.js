@@ -311,7 +311,7 @@ function spawnBall(noteIdx = noteIndex++, x = emitter.x, y = emitter.y, vel = nu
   });
   b.plugin.noteIdx = noteIdx;
   // градации чёрного: самый тёмный #3B3B3B (L 23%), дальше осветляются к серому
-  b.plugin.grayL = 23 + ((noteIdx * 17) % 6) * 10; // 23..73%
+  b.plugin.grayL = 23 + ((noteIdx * 17) % 6) * 6; // 23..53% (потемнее)
   b.plugin.zone = 0;
   b.plugin.gen = gen;
   b.plugin.spin = null;
@@ -770,7 +770,16 @@ function drawBall(b, now) {
   } else {
     ctx.arc(0, 0, r, 0, Math.PI * 2);
   }
-  ctx.fillStyle = flashing ? '#ffffff' : `hsl(0 0% ${grayL}%)`;
+  if (flashing) {
+    ctx.fillStyle = '#ffffff';
+  } else {
+    // объёмный шарик: блик сверху-слева -> тёмный край снизу-справа
+    const g = ctx.createRadialGradient(-r * 0.38, -r * 0.42, r * 0.12, 0, 0, r * 1.05);
+    g.addColorStop(0, `hsl(0 0% ${Math.min(92, grayL + 30)}%)`);
+    g.addColorStop(0.45, `hsl(0 0% ${grayL}%)`);
+    g.addColorStop(1, `hsl(0 0% ${Math.max(8, grayL - 15)}%)`);
+    ctx.fillStyle = g;
+  }
   ctx.fill();
   ctx.restore();
 }
