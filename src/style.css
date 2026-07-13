@@ -164,20 +164,17 @@ html, body {
   pointer-events: none;
 }
 
+/* точные надписи-вектора из макета, позиции из координат Figma */
 .bk-title {
-  margin-top: 12%;
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: clamp(10px, 3.4vw, 15px);
-  letter-spacing: 0.55em;
-  text-indent: 0.55em;
-  color: #6b665c;
+  position: absolute;
+  left: 12.8%; top: 5.2%; width: 77.2%;
+  opacity: 0.55;
 }
 
 .bk-cta {
-  margin-top: 24%;
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: clamp(22px, 7.2vw, 32px);
-  color: #3b3b3b;
+  position: absolute;
+  left: 25.6%; top: 42.1%; width: 50.9%;
+  opacity: 0.82;
 }
 
 .bk-title, .bk-cta { transition: opacity 0.35s ease; }
