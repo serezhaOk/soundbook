@@ -154,7 +154,27 @@ const samplers = {
 };
 
 // длительность звучания на цвет (сэмпл живёт до release)
-const NOTE_DUR = { bounce: 2.2, spin: 0.7, arp: 0.3, split: 0.6, spawn: 0.4 };
+const NOTE_DUR = { bounce: 1.6, spin: 0.7, arp: 0.3, split: 0.6, spawn: 0.4 };
+
+// --- бюджет полифонии: не даём голосам лавинообразно расти (причина фризов) ---
+const MAX_VOICES = 16;      // всего одновременно
+const PER_KIND_CAP = 5;     // не больше на один цвет -> место остаётся другим
+let activeVoices = 0;
+const kindActive = { bounce: 0, spin: 0, arp: 0, split: 0, spawn: 0 };
+
+function allocVoice(kind) {
+  if (activeVoices >= MAX_VOICES) return false;
+  if (kindActive[kind] >= PER_KIND_CAP) return false;
+  activeVoices++;
+  kindActive[kind]++;
+  return true;
+}
+function freeVoiceLater(kind, ms) {
+  setTimeout(() => {
+    activeVoices = Math.max(0, activeVoices - 1);
+    kindActive[kind] = Math.max(0, kindActive[kind] - 1);
+  }, ms);
+}
 
 // пул голосов для желе: пад живёт, пока шарик внутри.
 // fat-осцилляторы (расстроенный унисон) + медленная атака = мягкий хор
@@ -233,12 +253,16 @@ function qTime() {
 }
 
 function play(kind, noteIdx, velocity, durOverride) {
-  if (!audioReady) return;
+  if (!audioReady) return false;
   const s = samplers[kind];
-  if (!s || !s.loaded) return;
+  if (!s || !s.loaded) return false;
+  if (!allocVoice(kind)) return false; // бюджет исчерпан -> тихо пропускаем
   const note = SCALE[((noteIdx % SCALE.length) + SCALE.length) % SCALE.length];
+  const dur = durOverride ?? NOTE_DUR[kind];
   const vel = velocity * (0.9 + Math.random() * 0.2); // хуманизация
-  s.triggerAttackRelease(note, durOverride ?? NOTE_DUR[kind], qTime(), vel);
+  s.triggerAttackRelease(note, dur, qTime(), vel);
+  freeVoiceLater(kind, Math.min(1100, dur * 1000 + 120)); // слот освобождается вовремя
+  return true;
 }
 
 // ---------- физика ----------
@@ -246,7 +270,7 @@ const engine = Engine.create({ gravity: { x: 0, y: 0.32 } });
 const world = engine.world;
 
 const BALL_R = 7;
-const MAX_BALLS = 70;
+const MAX_BALLS = 50;
 const BASE_FRICTION_AIR = 0.004; // выше сопротивление -> ниже предельная скорость
 
 const balls = [];
@@ -256,7 +280,7 @@ const cellFlash = new Map(); // idx -> 0..1
 
 // ---------- аркадный джус: партиклы и тряска ----------
 const particles = [];
-const MAX_PARTICLES = 350;
+const MAX_PARTICLES = 240;
 
 function burst(x, y, color, n = 10, speed = 3) {
   for (let i = 0; i < n && particles.length < MAX_PARTICLES; i++) {
@@ -572,9 +596,8 @@ function updateBallEffects(b, dt, now) {
       burst(b.position.x, b.position.y, '#e97f8a', 14, 4);
       ring(b.position.x, b.position.y, '#e97f8a', 7, 3);
       shake(2.5);
-      play('split', b.plugin.noteIdx, 0.7);
-      // суб-удар октавой-двумя ниже — панч у деления
-      if (audioReady) {
+      // суб-удар октавой-двумя ниже — только если основная нота прошла по бюджету
+      if (play('split', b.plugin.noteIdx, 0.7)) {
         const note = SCALE[b.plugin.noteIdx % SCALE.length];
         subKick.triggerAttackRelease(Tone.Frequency(note).transpose(-24), '8n', qTime(), 0.6);
       }
