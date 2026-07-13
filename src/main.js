@@ -610,38 +610,23 @@ function updateBallEffects(b, dt, now) {
   }
 }
 
-// ---------- стартовый экран ----------
+// ---------- сплеш: тап по книге -> открытие -> чистый канвас ----------
 const startScreen = document.getElementById('start-screen');
 let started = false;
-document.getElementById('startBtn').addEventListener('click', async () => {
-  await ensureAudio();
+let opening = false;
+document.getElementById('book').addEventListener('click', async () => {
+  if (opening) return;
+  opening = true;
+  ensureAudio(); // не ждём: анимация идёт, звук догружается параллельно
   placeEmitter();
-  if (!grid.some((c) => c !== 0)) seedDemo();
-  started = true;
-  startScreen.classList.add('hidden');
-  setTimeout(() => startScreen.remove(), 450);
+  startScreen.classList.add('opening');
+  // раскадровка: обложка открылась и книга заняла экран -> старт нот -> фейд сплеша
+  setTimeout(() => { started = true; }, 1150);
+  setTimeout(() => startScreen.classList.add('hidden'), 1350);
+  setTimeout(() => startScreen.remove(), 1900);
 });
 
-function paintBlob(cx, cy, w, h, color) {
-  for (let y = cy; y < cy + h; y++)
-    for (let x = cx; x < cx + w; x++)
-      setCell(x, y, color);
-}
-
-function seedDemo() {
-  const mx = (COLS / 2) | 0;
-  // жёлтая лесенка
-  for (let i = 0; i < 6; i++) paintBlob(mx - 6 + i, ((ROWS * 0.24) | 0) + i, 2, 1, BOUNCE);
-  // синяя клякса
-  paintBlob(mx + 1, (ROWS * 0.42) | 0, 6, 3, SPIN);
-  paintBlob(mx + 2, ((ROWS * 0.42) | 0) - 1, 3, 1, SPIN);
-  // фиолетовое желе
-  paintBlob(mx - 8, (ROWS * 0.6) | 0, 9, 4, JELLY);
-  paintBlob(mx - 6, ((ROWS * 0.6) | 0) + 4, 6, 2, JELLY);
-  // зелёная полоска и розовая точка
-  paintBlob(mx - 2, (ROWS * 0.8) | 0, 8, 2, ARP);
-  paintBlob(mx - 7, (ROWS * 0.86) | 0, 2, 2, SPLIT);
-}
+// демо-сцена убрана: канвас после открытия книги — чистый лист
 
 // ---------- state / UI ----------
 let running = true;

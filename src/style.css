@@ -53,19 +53,27 @@ html, body {
   to   { transform: rotate(30deg) scale(3) translateY(0.9%); }
 }
 
-/* ---------- стартовый экран ---------- */
+/* ---------- сплеш: книга на бумаге с почеркушками ---------- */
 
 #start-screen {
   position: fixed;
   inset: 0;
   z-index: 30;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  overflow: hidden;
   background: #f6f2ea;
-  transition: opacity 0.4s ease;
+  transition: opacity 0.45s ease;
+}
+
+/* тканевая свето-тень поверх бумаги, как на макете */
+#start-screen::after {
+  content: '';
+  position: absolute;
+  inset: -30%;
+  background: url('./blinds.jpg') center / cover no-repeat;
+  mix-blend-mode: multiply;
+  opacity: 0.45;
+  transform: rotate(30deg) scale(3);
+  pointer-events: none;
 }
 
 #start-screen.hidden {
@@ -73,53 +81,119 @@ html, body {
   pointer-events: none;
 }
 
-#start-screen .logo {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+/* почеркушки — позиции из координат Figma (390x844) */
+.scr { position: absolute; pointer-events: none; transition: opacity 0.5s ease 0.3s; }
+.scr-star   { left: -22.5%; top: -5%;   width: 62%; }
+.scr-green  { left: -25.4%; top: 39.1%; width: 60.4%; }
+.scr-yellow { left: 65.4%;  top: 29.7%; width: 41.7%; }
+.scr-blue   { left: 12%;    top: 82.9%; width: 88%; }
 
-#start-screen .dot {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #cfa9f0;
-  animation: bounce 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-}
+#start-screen.opening .scr,
+#start-screen.opening .book-shadow { opacity: 0; }
 
-@keyframes bounce {
-  0%, 100% { transform: translateY(-8px); }
-  50% { transform: translateY(8px); }
-}
-
-#start-screen h1 {
-  margin: 0;
-  font-size: 34px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-#start-screen p {
-  margin: 0 0 22px;
-  font-size: 14px;
-  color: #948e85;
-}
-
-#startBtn {
-  min-width: 200px;
-  height: 54px;
-  border: none;
-  border-radius: 27px;
-  background: #26222b;
-  color: #f6f2ea;
-  font-size: 17px;
-  font-weight: 600;
+/* книга: центр из макета (x49 y287 w291 h270 при 390x844) */
+.book-wrap {
+  position: absolute;
+  left: 12.5%;
+  top: 34%;
+  width: 74.7%;
+  aspect-ratio: 291 / 270;
+  perspective: 1400px;
   cursor: pointer;
   touch-action: manipulation;
-  box-shadow: 0 8px 24px rgba(38, 34, 43, 0.25);
 }
 
-#startBtn:active { transform: scale(0.97); }
+.book-shadow {
+  position: absolute;
+  left: 4%;
+  right: -6%;
+  bottom: -7%;
+  height: 24%;
+  background: radial-gradient(50% 50% at 50% 50%, rgba(38, 34, 43, 0.28), transparent 70%);
+  filter: blur(6px);
+  transition: opacity 0.5s ease 0.2s;
+}
+
+.book {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-6deg);
+  transform-style: preserve-3d;
+  transition: transform 1.05s cubic-bezier(0.65, 0, 0.3, 1);
+  animation: book-float 4s ease-in-out infinite alternate;
+}
+
+@keyframes book-float {
+  from { translate: 0 -3px; }
+  to   { translate: 0 3px; }
+}
+
+/* распахнутая страница под обложкой */
+.book .page {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px 10px 10px 6px;
+  background: #fffdf8;
+  box-shadow: 0 10px 30px rgba(38, 34, 43, 0.18);
+}
+
+/* обложка: открывается вокруг левого края */
+.book .cover {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px 10px 10px 6px;
+  transform-origin: left center;
+  transform-style: preserve-3d;
+  transition: transform 1.15s cubic-bezier(0.6, 0, 0.25, 1) 0.12s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: linear-gradient(100deg, #f4f1e9 0%, #fbf9f3 30%, #f1ede4 100%);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.8), inset 0 -2px 4px rgba(38, 34, 43, 0.08);
+  backface-visibility: hidden;
+}
+
+.book .spine {
+  position: absolute;
+  left: 0;
+  top: 1.5%;
+  width: 10%;
+  height: 97%;
+  border-radius: 6px 0 0 6px;
+  background: linear-gradient(90deg, #d9d4c8, #efece3 55%, #dfdacd);
+  pointer-events: none;
+}
+
+.bk-title {
+  margin-top: 12%;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(10px, 3.4vw, 15px);
+  letter-spacing: 0.55em;
+  text-indent: 0.55em;
+  color: #6b665c;
+}
+
+.bk-cta {
+  margin-top: 24%;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(22px, 7.2vw, 32px);
+  color: #3b3b3b;
+}
+
+.bk-title, .bk-cta { transition: opacity 0.35s ease; }
+
+/* --- раскадровка открытия --- */
+#start-screen.opening .book {
+  animation: none;
+  transform: rotate(6deg) scale(4.6) translate(4%, 9%);
+}
+
+#start-screen.opening .cover {
+  transform: rotateY(-165deg);
+}
+
+#start-screen.opening .bk-title,
+#start-screen.opening .bk-cta { opacity: 0; }
 
 /* ---------- нижняя панель (пиксель-перфект по макету 390px) ---------- */
 
