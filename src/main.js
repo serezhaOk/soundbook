@@ -87,10 +87,10 @@ function duckHit(depth = 0.35) {
   g.linearRampToValueAtTime(1, t + 0.6);
 }
 
-// жёлтый (батут): сухой + жирные send'ы в реверб и shimmer
-const yellowDry = new Tone.Gain(0.75).connect(master);
-const yellowRev = new Tone.Gain(0.5).connect(reverb);
-const yellowShim = new Tone.Gain(0.33).connect(shimmer);
+// жёлтый (батут): сухой + send'ы в реверб и shimmer (приглушены под остальные)
+const yellowDry = new Tone.Gain(0.6).connect(master);
+const yellowRev = new Tone.Gain(0.4).connect(reverb);
+const yellowShim = new Tone.Gain(0.16).connect(shimmer);
 
 // синий (центрифуга): delay, синхронный темпу (точечная 1/8)
 const blueDelay = new Tone.FeedbackDelay('8n.', 0.5).connect(master);
@@ -132,7 +132,7 @@ const droneOsc = [
   new Tone.Oscillator('G2', 'sine').connect(droneLP),
 ];
 
-// сэмплер «музыкальная шкатулка» (рендер модальным синтезом, public/samples)
+// сэмплер «глюкофон» — мягкий стил-тонг-драм (рендер аддитивным синтезом, public/samples)
 const SAMPLE_URLS = {
   C4: 'mbx-C4.wav', E4: 'mbx-E4.wav', A4: 'mbx-A4.wav',
   C5: 'mbx-C5.wav', E5: 'mbx-E5.wav', A5: 'mbx-A5.wav', C6: 'mbx-C6.wav',
@@ -146,7 +146,7 @@ function mkSampler(volume, ...dests) {
 }
 
 const samplers = {
-  bounce: mkSampler(-3, yellowDry, yellowRev, yellowShim),
+  bounce: mkSampler(-9, yellowDry, yellowRev, yellowShim), // выровнен с остальными
   spin: mkSampler(-8, blueDelay, blueRev),
   arp: mkSampler(-9, greenBP),
   split: mkSampler(-9, pinkCheby),
