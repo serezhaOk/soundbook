@@ -84,7 +84,7 @@ html, body {
 /* почеркушки — позиции из координат Figma (390x844) */
 .scr { position: absolute; pointer-events: none; transition: opacity 0.5s ease 0.3s; }
 .scr-star   { left: -22.5%; top: -5%;   width: 62%; }
-.scr-green  { left: -25.4%; top: 39.1%; width: 60.4%; }
+.scr-green  { left: -6%; top: 39.1%; height: 25.4%; width: auto; }
 .scr-yellow { left: 65.4%;  top: 29.7%; width: 41.7%; }
 .scr-blue   { left: 12%;    top: 82.9%; width: 88%; }
 
