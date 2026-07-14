@@ -407,6 +407,7 @@ function spawnBall(noteIdx = noteIndex++, x = emitter.x, y = emitter.y, vel = nu
   b.plugin.noteIdx = noteIdx;
   // градации чёрного: самый тёмный #3B3B3B (L 23%), дальше осветляются к серому
   b.plugin.grayL = 23 + ((noteIdx * 17) % 6) * 6; // 23..53% (потемнее)
+  b.plugin.ringStyle = noteIdx % 4 === 3; // каждая четвёртая нота — колечко
   b.plugin.zone = 0;
   b.plugin.gen = gen;
   b.plugin.spin = null;
@@ -814,19 +815,65 @@ function redrawGrid() {
 
 let emitterPulse = 0;
 
+// эмиттер в духе генеративного арта: вращающийся каркасный куб + антенны с колечками
+const CUBE_V = [
+  [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
+  [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1],
+];
+const CUBE_E = [
+  [0, 1], [1, 2], [2, 3], [3, 0],
+  [4, 5], [5, 6], [6, 7], [7, 4],
+  [0, 4], [1, 5], [2, 6], [3, 7],
+];
+
 function drawEmitter(t) {
   emitterPulse = Math.max(0, emitterPulse - 0.05);
-  const pulse = 1 + 0.08 * Math.sin(t / 250) + emitterPulse * 0.45;
+  const s = 12 * (1 + 0.05 * Math.sin(t / 400) + emitterPulse * 0.35);
+  const ry = t * 0.00035;
+  const rx = 0.45 + Math.sin(t * 0.00018) * 0.2;
+
+  // проекция вершин: rotY -> rotX -> лёгкая перспектива
+  const pts = CUBE_V.map(([x, y, z]) => {
+    let px = x * Math.cos(ry) + z * Math.sin(ry);
+    let pz = -x * Math.sin(ry) + z * Math.cos(ry);
+    let py = y * Math.cos(rx) - pz * Math.sin(rx);
+    pz = y * Math.sin(rx) + pz * Math.cos(rx);
+    const f = 1 / (1 + pz * 0.14);
+    return [emitter.x + px * s * f, emitter.y + py * s * f];
+  });
+
   ctx.save();
   ctx.strokeStyle = '#26222b';
-  ctx.lineWidth = 2 + emitterPulse * 1.5;
+  ctx.lineWidth = 1.3;
+  ctx.globalAlpha = 0.92;
   ctx.beginPath();
-  ctx.arc(emitter.x, emitter.y, 11 * pulse, 0, Math.PI * 2);
+  for (const [a, b] of CUBE_E) {
+    ctx.moveTo(pts[a][0], pts[a][1]);
+    ctx.lineTo(pts[b][0], pts[b][1]);
+  }
   ctx.stroke();
-  ctx.fillStyle = '#26222b';
-  ctx.beginPath();
-  ctx.arc(emitter.x, emitter.y, 3.5 * (1 + emitterPulse * 0.6), 0, Math.PI * 2);
-  ctx.fill();
+
+  // усики-антенны с колечками на концах, слегка покачиваются
+  const ants = [
+    [-2.35 + Math.sin(t * 0.0005) * 0.12, 2.1],
+    [-0.9 + Math.sin(t * 0.0004 + 2) * 0.1, 2.6],
+    [-3.4 + Math.sin(t * 0.0006 + 4) * 0.1, 2.3],
+  ];
+  ctx.lineWidth = 1.1;
+  ctx.globalAlpha = 0.8;
+  for (const [ang, len] of ants) {
+    const x1 = emitter.x + Math.cos(ang) * s * 1.05;
+    const y1 = emitter.y + Math.sin(ang) * s * 1.05;
+    const x2 = emitter.x + Math.cos(ang) * s * len;
+    const y2 = emitter.y + Math.sin(ang) * s * len;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x2 + Math.cos(ang) * 3.5, y2 + Math.sin(ang) * 3.5, 3.4, 0, Math.PI * 2);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -869,10 +916,10 @@ function drawTrails() {
     for (let i = 0; i < tr.length; i++) {
       const p = tr[i];
       const f = (i + 1) / tr.length;
-      ctx.globalAlpha = f * 0.16;
+      ctx.globalAlpha = f * 0.45;
       ctx.fillStyle = `hsl(0 0% ${b.plugin.grayL}%)`;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, BALL_R * f * 0.8, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 1.6 + f * 1.2, 0, Math.PI * 2); // маленькие чёткие точки
       ctx.fill();
     }
   }
@@ -925,17 +972,22 @@ function drawBall(b, now) {
   } else {
     ctx.arc(0, 0, r, 0, Math.PI * 2);
   }
+  // плоская «чернильная» графика: заливка или контурное колечко
+  const ink = `hsl(0 0% ${grayL}%)`;
   if (flashing) {
     ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = ink;
+    ctx.stroke();
+  } else if (b.plugin.ringStyle) {
+    ctx.lineWidth = 2.2;
+    ctx.strokeStyle = ink;
+    ctx.stroke();
   } else {
-    // объёмный шарик: блик сверху-слева -> тёмный край снизу-справа
-    const g = ctx.createRadialGradient(-r * 0.38, -r * 0.42, r * 0.12, 0, 0, r * 1.05);
-    g.addColorStop(0, `hsl(0 0% ${Math.min(92, grayL + 30)}%)`);
-    g.addColorStop(0.45, `hsl(0 0% ${grayL}%)`);
-    g.addColorStop(1, `hsl(0 0% ${Math.max(8, grayL - 15)}%)`);
-    ctx.fillStyle = g;
+    ctx.fillStyle = ink;
+    ctx.fill();
   }
-  ctx.fill();
   ctx.restore();
 }
 
@@ -980,9 +1032,13 @@ function frame(now) {
   for (const b of balls) {
     updateBallEffects(b, dt, now);
     b.plugin.squash = Math.max(0, b.plugin.squash - dt * 0.007);
-    const tr = b.plugin.trail;
-    tr.push({ x: b.position.x, y: b.position.y });
-    if (tr.length > 3) tr.shift();
+    // пунктирный след: точка каждые ~60мс, как цепочки в генеративном арте
+    if (now - (b.plugin.lastTrail || 0) > 60) {
+      b.plugin.lastTrail = now;
+      const tr = b.plugin.trail;
+      tr.push({ x: b.position.x, y: b.position.y });
+      if (tr.length > 7) tr.shift();
+    }
   }
 
   Engine.update(engine, dt);
