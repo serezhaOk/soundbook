@@ -683,9 +683,15 @@ palette.addEventListener('click', (e) => {
   if (sw) setTool('paint', Number(sw.dataset.color));
 });
 
-// ---------- pointer: покраска / ластик ----------
+// ---------- pointer: прицел эмиттера / покраска / ластик ----------
 let painting = false;
 let lastPoint = null;
+
+// направление вылета нот: по умолчанию null = обычное падение вниз
+const aim = { active: false, vx: 0, vy: 0 };
+let aiming = null; // {x, y} текущая точка перетаскивания, пока тянем от эмиттера
+const AIM_GRAB = 46; // радиус захвата вокруг эмиттера
+const AIM_MAX_SPEED = 15;
 
 function pos(e) {
   const r = canvas.getBoundingClientRect();
@@ -715,20 +721,51 @@ function applyStroke(from, to) {
 canvas.addEventListener('pointerdown', (e) => {
   ensureAudio();
   canvas.setPointerCapture(e.pointerId);
+  const p = pos(e);
+  // старт рядом с эмиттером -> режим прицела (не красим)
+  if (Math.hypot(p.x - emitter.x, p.y - emitter.y) < AIM_GRAB) {
+    aiming = p;
+    return;
+  }
   painting = true;
-  lastPoint = pos(e);
+  lastPoint = p;
   applyAt(lastPoint);
 });
 
 canvas.addEventListener('pointermove', (e) => {
+  if (aiming) { aiming = pos(e); return; }
   if (!painting) return;
   const p = pos(e);
   applyStroke(lastPoint, p);
   lastPoint = p;
 });
 
-canvas.addEventListener('pointerup', () => { painting = false; lastPoint = null; });
-canvas.addEventListener('pointercancel', () => { painting = false; lastPoint = null; });
+function endAim() {
+  if (!aiming) return;
+  const dx = aiming.x - emitter.x;
+  const dy = aiming.y - emitter.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 14) {
+    aim.active = false; // короткий тап у эмиттера -> сброс к падению вниз
+  } else {
+    const speed = Math.min(dist * 0.09, AIM_MAX_SPEED);
+    aim.active = true;
+    aim.vx = (dx / dist) * speed;
+    aim.vy = (dy / dist) * speed;
+  }
+  aiming = null;
+}
+
+canvas.addEventListener('pointerup', () => {
+  endAim();
+  painting = false;
+  lastPoint = null;
+});
+canvas.addEventListener('pointercancel', () => {
+  aiming = null;
+  painting = false;
+  lastPoint = null;
+});
 
 /*
 // перетаскивание преград (закомментировано на время сеточной версии)
@@ -789,6 +826,39 @@ function drawEmitter(t) {
   ctx.fillStyle = '#26222b';
   ctx.beginPath();
   ctx.arc(emitter.x, emitter.y, 3.5 * (1 + emitterPulse * 0.6), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// полупрозрачная стрелка направления, пока тянем от эмиттера
+function drawAimArrow() {
+  if (!aiming) return;
+  const dx = aiming.x - emitter.x;
+  const dy = aiming.y - emitter.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 6) return;
+  const ux = dx / dist, uy = dy / dist;
+  const len = Math.min(dist, 150);
+  const ex = emitter.x + ux * len, ey = emitter.y + uy * len;
+
+  ctx.save();
+  ctx.globalAlpha = 0.4;
+  ctx.strokeStyle = '#26222b';
+  ctx.fillStyle = '#26222b';
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(emitter.x, emitter.y);
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+  // наконечник
+  const ah = 15;
+  const a = Math.atan2(uy, ux);
+  ctx.beginPath();
+  ctx.moveTo(ex, ey);
+  ctx.lineTo(ex - ah * Math.cos(a - 0.42), ey - ah * Math.sin(a - 0.42));
+  ctx.lineTo(ex - ah * Math.cos(a + 0.42), ey - ah * Math.sin(a + 0.42));
+  ctx.closePath();
   ctx.fill();
   ctx.restore();
 }
@@ -894,7 +964,16 @@ function frame(now) {
     while (spawnAcc >= interval) {
       spawnAcc -= interval;
       const b = spawnBall();
-      if (b) play('spawn', b.plugin.noteIdx, 0.2, 0.1);
+      if (b) {
+        // задаём стартовый вектор, если выставлено направление прицела
+        if (aim.active) {
+          Body.setVelocity(b, {
+            x: aim.vx + (Math.random() - 0.5) * 0.4,
+            y: aim.vy + (Math.random() - 0.5) * 0.4,
+          });
+        }
+        play('spawn', b.plugin.noteIdx, 0.2, 0.1);
+      }
     }
   }
 
@@ -927,6 +1006,7 @@ function frame(now) {
   drawTrails();
   drawParticles();
   drawEmitter(now);
+  drawAimArrow();
   balls.forEach((b) => drawBall(b, now));
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
