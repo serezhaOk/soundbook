@@ -1,5 +1,6 @@
 import Matter from 'matter-js';
 import * as Tone from 'tone';
+import SAMPLE_MAP from './sample-map.json';
 
 const { Engine, Composite, Bodies, Body, Events } = Matter;
 
@@ -128,30 +129,40 @@ const jellyFilter = new Tone.Filter(850, 'lowpass', -12).connect(jellyChorus);
 const droneGain = new Tone.Gain(0).connect(duck);
 const droneLP = new Tone.Filter(320, 'lowpass').connect(droneGain);
 const droneOsc = [
-  new Tone.Oscillator('C2', 'sine').connect(droneLP),
-  new Tone.Oscillator('G2', 'sine').connect(droneLP),
+  new Tone.Oscillator('A2', 'sine').connect(droneLP),
+  new Tone.Oscillator('E3', 'sine').connect(droneLP),
 ];
 
-// сэмплер «глюкофон» — мягкий стил-тонг-драм (рендер аддитивным синтезом, public/samples)
-const SAMPLE_URLS = {
-  C4: 'mbx-C4.wav', E4: 'mbx-E4.wav', A4: 'mbx-A4.wav',
-  C5: 'mbx-C5.wav', E5: 'mbx-E5.wav', A5: 'mbx-A5.wav', C6: 'mbx-C6.wav',
-};
+// пользовательский сэмпл-пак: 11 one-shot инструментов (public/samples),
+// корень C4, каждый шарик получает случайный инструмент
 const SAMPLE_BASE = import.meta.env.BASE_URL + 'samples/';
+const INSTRUMENTS = SAMPLE_MAP.length;
 
-function mkSampler(volume, ...dests) {
-  const s = new Tone.Sampler({ urls: SAMPLE_URLS, baseUrl: SAMPLE_BASE, volume });
-  for (const d of dests) s.connect(d);
-  return s;
+// буферы декодируем один раз и шарим между всеми сэмплерами всех шин
+const instBuffers = SAMPLE_MAP.map(
+  (m) => new Tone.ToneAudioBuffer(SAMPLE_BASE + encodeURIComponent(m.file))
+);
+
+let samplers = null;
+
+function buildSamplers() {
+  const mk = (volume, ...dests) => SAMPLE_MAP.map((m, i) => {
+    const s = new Tone.Sampler({
+      urls: { [m.note]: instBuffers[i] },
+      volume: volume + m.gainDb,
+      release: 0.7,
+    });
+    for (const d of dests) s.connect(d);
+    return s;
+  });
+  samplers = {
+    bounce: mk(-11, yellowDry, yellowRev, yellowShim),
+    spin: mk(-10, blueDelay, blueRev),
+    arp: mk(-11, greenBP),
+    split: mk(-11, pinkCheby),
+    spawn: mk(-26, master),
+  };
 }
-
-const samplers = {
-  bounce: mkSampler(-9, yellowDry, yellowRev, yellowShim), // выровнен с остальными
-  spin: mkSampler(-8, blueDelay, blueRev),
-  arp: mkSampler(-9, greenBP),
-  split: mkSampler(-9, pinkCheby),
-  spawn: mkSampler(-24, master),
-};
 
 // длительность звучания на цвет (сэмпл живёт до release)
 const NOTE_DUR = { bounce: 1.6, spin: 0.7, arp: 0.3, split: 0.6, spawn: 0.4 };
@@ -231,7 +242,8 @@ async function ensureAudio() {
   unlockIOSAudio();
   await Tone.start();
   await Tone.getContext().resume();
-  await Tone.loaded(); // ждём сэмплы (локальные, грузятся мгновенно)
+  await Tone.loaded(); // ждём декодирования сэмпл-пака
+  if (!samplers) buildSamplers();
   // Transport с лёгким свингом — база для мягкой квантизации
   Tone.Transport.bpm.value = BPM;
   Tone.Transport.swing = 0.12;
@@ -242,7 +254,8 @@ async function ensureAudio() {
   audioReady = true;
 }
 
-const SCALE = ['C4', 'D4', 'E4', 'G4', 'A4', 'C5', 'D5', 'E5', 'G5', 'A5'];
+// ля минор (натуральный, без F — чтобы случайные тембры не диссонировали в хвостах)
+const SCALE = ['A3', 'C4', 'D4', 'E4', 'G4', 'A4', 'B4', 'C5', 'D5', 'E5'];
 
 // мягкая квантизация: снапим к ближайшей 1/16 только если она ближе 75мс
 function qTime() {
@@ -252,9 +265,9 @@ function qTime() {
   return Tone.now() + (d < 0.075 ? d : 0) + 0.002 + Math.random() * 0.004;
 }
 
-function play(kind, noteIdx, velocity, durOverride) {
-  if (!audioReady) return false;
-  const s = samplers[kind];
+function play(kind, noteIdx, velocity, durOverride, inst = 0) {
+  if (!audioReady || !samplers) return false;
+  const s = samplers[kind][((inst % INSTRUMENTS) + INSTRUMENTS) % INSTRUMENTS];
   if (!s || !s.loaded) return false;
   if (!allocVoice(kind)) return false; // бюджет исчерпан -> тихо пропускаем
   const note = SCALE[((noteIdx % SCALE.length) + SCALE.length) % SCALE.length];
@@ -408,6 +421,7 @@ function spawnBall(noteIdx = noteIndex++, x = emitter.x, y = emitter.y, vel = nu
   // градации чёрного: самый тёмный #3B3B3B (L 23%), дальше осветляются к серому
   b.plugin.grayL = 23 + ((noteIdx * 17) % 6) * 6; // 23..53% (потемнее)
   b.plugin.ringStyle = noteIdx % 4 === 3; // каждая четвёртая нота — колечко
+  b.plugin.inst = (Math.random() * INSTRUMENTS) | 0; // случайный инструмент из пака
   b.plugin.zone = 0;
   b.plugin.gen = gen;
   b.plugin.spin = null;
@@ -450,7 +464,7 @@ Events.on(engine, 'collisionStart', (e) => {
     if (now - (lastHit.get(key) || 0) < 130) continue;
     lastHit.set(key, now);
 
-    play('bounce', ball.plugin.noteIdx, Math.min(1, 0.3 + speed / 14));
+    play('bounce', ball.plugin.noteIdx, Math.min(1, 0.3 + speed / 14), undefined, ball.plugin.inst);
     duckHit(); // пад и дрон приседают под ударом (сайдчейн)
     cellFlash.set(cell.plugin.idx, 1);
     // джус: тряска, сквош, брызги и ударная волна
@@ -522,12 +536,12 @@ function updateBallEffects(b, dt, now) {
 
     if (now >= s.nextTrig) {
       s.step++;
-      play('spin', b.plugin.noteIdx + s.step, 0.32, 0.12);
+      play('spin', b.plugin.noteIdx + s.step, 0.32, 0.12, b.plugin.inst);
       s.nextTrig = now + Math.max(150, 340 - s.t / 16);
     }
     if (s.r > s.radius + CELL * 0.8) {
       // выплёвываем: октава вверх, тангенциальный вылет
-      play('spin', b.plugin.noteIdx + 5, 0.55, 0.25);
+      play('spin', b.plugin.noteIdx + 5, 0.55, 0.25, b.plugin.inst);
       burst(b.position.x, b.position.y, '#5fb8e0', 10, 3.5);
       ring(b.position.x, b.position.y, '#5fb8e0', 8, 3.2);
       shake(1.5);
@@ -571,7 +585,7 @@ function updateBallEffects(b, dt, now) {
         r: Math.max(4, Math.hypot(b.position.x - mx, b.position.y - my) * 0.5),
         t: 0, omega: 0.004, step: 0, nextTrig: now,
       };
-      play('spin', b.plugin.noteIdx, 0.5, 0.2);
+      play('spin', b.plugin.noteIdx, 0.5, 0.2, b.plugin.inst);
     }
     if (zone === SPLIT && now >= b.plugin.splitCool) {
       b.plugin.splitCool = now + 500;
@@ -598,7 +612,7 @@ function updateBallEffects(b, dt, now) {
       ring(b.position.x, b.position.y, '#e97f8a', 7, 3);
       shake(2.5);
       // суб-удар октавой-двумя ниже — только если основная нота прошла по бюджету
-      if (play('split', b.plugin.noteIdx, 0.7)) {
+      if (play('split', b.plugin.noteIdx, 0.7, undefined, b.plugin.inst)) {
         const note = SCALE[b.plugin.noteIdx % SCALE.length];
         subKick.triggerAttackRelease(Tone.Frequency(note).transpose(-24), '8n', qTime(), 0.6);
       }
@@ -626,7 +640,7 @@ function updateBallEffects(b, dt, now) {
     const a = b.plugin.arp;
     a.pulse = Math.max(0, a.pulse - dt * 0.005);
     if (now >= a.next) {
-      play('arp', b.plugin.noteIdx + a.step, 0.4, 0.08);
+      play('arp', b.plugin.noteIdx + a.step, 0.4, 0.08, b.plugin.inst);
       a.step++;
       a.pulse = 1; // вспышка размера + смена формы в ритм
       a.next = now + 175;
@@ -1024,7 +1038,7 @@ function frame(now) {
             y: aim.vy + (Math.random() - 0.5) * 0.4,
           });
         }
-        play('spawn', b.plugin.noteIdx, 0.2, 0.1);
+        play('spawn', b.plugin.noteIdx, 0.2, 0.1, b.plugin.inst);
       }
     }
   }

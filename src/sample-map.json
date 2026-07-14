@@ -1,0 +1,57 @@
+[
+  {
+    "file": "Bell_Evolving bell.wav",
+    "note": "C4",
+    "gainDb": 9.4
+  },
+  {
+    "file": "Bell_Haunted toy piano.wav",
+    "note": "C4",
+    "gainDb": 10
+  },
+  {
+    "file": "Bell_Kalimbox.wav",
+    "note": "C4",
+    "gainDb": 10
+  },
+  {
+    "file": "Bell_Lovely.wav",
+    "note": "C4",
+    "gainDb": 10
+  },
+  {
+    "file": "Bell_Oldschool FM.wav",
+    "note": "C4",
+    "gainDb": 10
+  },
+  {
+    "file": "Bell_Ring my bell.wav",
+    "note": "C4",
+    "gainDb": 4.9
+  },
+  {
+    "file": "Etherial_Dreamworld.wav",
+    "note": "C4",
+    "gainDb": -2.6
+  },
+  {
+    "file": "Hydra_Kyoto.wav",
+    "note": "C4",
+    "gainDb": 7.5
+  },
+  {
+    "file": "Synth_Round five.wav",
+    "note": "C4",
+    "gainDb": 10
+  },
+  {
+    "file": "Synth_Tomorrow never comes.wav",
+    "note": "C4",
+    "gainDb": 10
+  },
+  {
+    "file": "West Africa_Ngona.wav",
+    "note": "C4",
+    "gainDb": 10
+  }
+]
