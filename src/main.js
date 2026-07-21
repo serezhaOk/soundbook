@@ -358,7 +358,8 @@ let noteIndex = 0;
 const emitter = { x: 0, y: 0 };
 function placeEmitter() {
   emitter.x = W / 2;
-  emitter.y = Math.round(safeTop() + 18);
+  // голова прижата к верху экрана; спавн — там, где рот
+  emitter.y = Math.round(safeTop() + CAT_H * CAT_MOUTH);
 }
 
 function cellIdxAt(x, y) {
@@ -829,64 +830,40 @@ function redrawGrid() {
 
 let emitterPulse = 0;
 
-// эмиттер в духе генеративного арта: вращающийся каркасный куб + антенны с колечками
-const CUBE_V = [
-  [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
-  [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1],
-];
-const CUBE_E = [
-  [0, 1], [1, 2], [2, 3], [3, 0],
-  [4, 5], [5, 6], [6, 7], [7, 4],
-  [0, 4], [1, 5], [2, 6], [3, 7],
-];
+// эмиттер — голова кота ~100px, прижата к верху; при вылете рот открывается
+const CAT_W = 100;
+let CAT_H = 92;           // пересчитывается по натуральному аспекту картинки
+const CAT_MOUTH = 0.82;   // доля высоты головы, где рот = точка спавна
+let catOpenUntil = 0;     // до этого времени показываем «открытый рот»
 
-function drawEmitter(t) {
+const catClosed = new Image();
+const catOpen = new Image();
+catClosed.onload = () => {
+  CAT_H = CAT_W * (catClosed.naturalHeight / catClosed.naturalWidth);
+  placeEmitter();
+};
+catClosed.src = SAMPLE_BASE.replace('samples/', '') + 'cat-closed.png';
+catOpen.src = SAMPLE_BASE.replace('samples/', '') + 'cat-open.png';
+
+function drawEmitter() {
+  const open = performance.now() < catOpenUntil;
+  const img = open ? catOpen : catClosed;
   emitterPulse = Math.max(0, emitterPulse - 0.05);
-  const s = 12 * (1 + 0.05 * Math.sin(t / 400) + emitterPulse * 0.35);
-  const ry = t * 0.00035;
-  const rx = 0.45 + Math.sin(t * 0.00018) * 0.2;
-
-  // проекция вершин: rotY -> rotX -> лёгкая перспектива
-  const pts = CUBE_V.map(([x, y, z]) => {
-    let px = x * Math.cos(ry) + z * Math.sin(ry);
-    let pz = -x * Math.sin(ry) + z * Math.cos(ry);
-    let py = y * Math.cos(rx) - pz * Math.sin(rx);
-    pz = y * Math.sin(rx) + pz * Math.cos(rx);
-    const f = 1 / (1 + pz * 0.14);
-    return [emitter.x + px * s * f, emitter.y + py * s * f];
-  });
 
   ctx.save();
-  ctx.strokeStyle = '#26222b';
-  ctx.lineWidth = 1.3;
-  ctx.globalAlpha = 0.92;
-  ctx.beginPath();
-  for (const [a, b] of CUBE_E) {
-    ctx.moveTo(pts[a][0], pts[a][1]);
-    ctx.lineTo(pts[b][0], pts[b][1]);
-  }
-  ctx.stroke();
-
-  // усики-антенны с колечками на концах, слегка покачиваются
-  const ants = [
-    [-2.35 + Math.sin(t * 0.0005) * 0.12, 2.1],
-    [-0.9 + Math.sin(t * 0.0004 + 2) * 0.1, 2.6],
-    [-3.4 + Math.sin(t * 0.0006 + 4) * 0.1, 2.3],
-  ];
-  ctx.lineWidth = 1.1;
-  ctx.globalAlpha = 0.8;
-  for (const [ang, len] of ants) {
-    const x1 = emitter.x + Math.cos(ang) * s * 1.05;
-    const y1 = emitter.y + Math.sin(ang) * s * 1.05;
-    const x2 = emitter.x + Math.cos(ang) * s * len;
-    const y2 = emitter.y + Math.sin(ang) * s * len;
+  if (img.complete && img.naturalWidth) {
+    const w = CAT_W * (1 + emitterPulse * 0.1);
+    const h = w * (img.naturalHeight / img.naturalWidth);
+    const cx = emitter.x;
+    // рот удерживаем на точке спавна независимо от того, какая картинка
+    const top = emitter.y - h * CAT_MOUTH;
+    ctx.drawImage(img, cx - w / 2, top, w, h);
+  } else {
+    // фолбэк, пока картинки не загрузились
+    ctx.fillStyle = '#26222b';
     ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(x2 + Math.cos(ang) * 3.5, y2 + Math.sin(ang) * 3.5, 3.4, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.arc(emitter.x, emitter.y, 10, 0, Math.PI * 2);
+    ctx.fill();
   }
   ctx.restore();
 }
@@ -1031,6 +1008,7 @@ function frame(now) {
       spawnAcc -= interval;
       const b = spawnBall();
       if (b) {
+        catOpenUntil = now + 150; // кот на миг открывает рот
         // задаём стартовый вектор, если выставлено направление прицела
         if (aim.active) {
           Body.setVelocity(b, {
